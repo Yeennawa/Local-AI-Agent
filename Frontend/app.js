@@ -1,6 +1,6 @@
 // ค้นหา Element ที่ต้องใช้งานจากหน้า HTML
 const USE_MOCK_API = false;
-const API_URL = "http://localhost:3000/api/chat";
+const API_URL = "/api/chat";
 const API_TIMEOUT = 60000;
 const promptForm = document.getElementById("prompt-form");
 const promptInput = document.getElementById("prompt-input");

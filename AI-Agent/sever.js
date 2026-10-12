@@ -1,8 +1,17 @@
 import express from 'express';
 import { runAgent } from './agent.js';
-
+import path from "path";
+import { fileURLToPath } from "url";
 const app = express();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.json());
+
+app.use(express.static(
+  path.join(__dirname, "../Frontend")
+));
 app.use(express.json());
 
 app.post('/api/chat', async (req, res) => {
