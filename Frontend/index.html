@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Local AI Agent</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <main class="app-container">
+
+
+    <header class="app-header">
+      <h1>Local AI Agent</h1>
+    </header>
+
+
+    <form class="prompt-form" id="prompt-form">
+
+
+      <input
+        type="text"
+        id="prompt-input"
+        name="prompt"
+        placeholder="พิมพ์อะไรสักหน่อย"
+        maxlength="1000"
+        autocomplete="off"
+        required
+      >
+
+      <button type="submit" id="send-button">
+        ส่ง
+      </button>
+
+    </form>
+
+    <section class="ai-panel" aria-live="polite">
+
+      <div class="ai-profile">
+
+        <div class="ai-character" aria-hidden="true">
+          <div class="character-antenna"></div>
+
+          <div class="character-face">
+            <span class="character-eye"></span>
+            <span class="character-eye"></span>
+          </div>
+        </div>
+
+        <div class="ai-information">
+          <h2>Local AI</h2>
+          <p>พร้อมช่วยตอบคำถาม</p>
+        </div>
+
+        <span class="status-badge">
+          Local
+        </span>
+
+      </div>
+
+   
+      <div class="ai-response" id="ai-response">
+        <p>
+          สวัสดีครับ ลองพิมพ์คำถามด้านบนเพื่อเริ่มต้นสนทนาได้เลย
+        </p>
+      </div>
+
+    </section>
+
+  </main>
+    <script src="app.js"></script>
+</body>
+    
+</html>
