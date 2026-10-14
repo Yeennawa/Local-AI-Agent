@@ -49,6 +49,32 @@ export function extractJson(raw) {
   return block ? tryParseObject(block) : null;
 }
 
+// Extracts readable text from truncated or unclosed JSON strings produced by token limits
+export function extractIncompleteText(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return '';
+
+  const trimmed = raw.trim();
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)(?:```)?$/i);
+  const target = fenceMatch ? fenceMatch[1].trim() : trimmed;
+
+  // Pattern matching: {"text": "..." or {"text":"..." that was cut off mid-string
+  const textKeyMatch = target.match(/["']?text["']?\s*:\s*["']((?:[^"\\]|\\.)*)$/);
+  if (textKeyMatch) {
+    try {
+      return JSON.parse(`"${textKeyMatch[1]}"`);
+    } catch {
+      return textKeyMatch[1];
+    }
+  }
+
+  // If plain text (not starting with { or [)
+  if (!target.startsWith('{') && !target.startsWith('[')) {
+    return target;
+  }
+
+  return target;
+}
+
 export function normalizeFeeling(value, fallback) {
   return FEELINGS.includes(value) ? value : fallback;
 }

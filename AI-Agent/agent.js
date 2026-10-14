@@ -1,6 +1,6 @@
 import { queryOllama } from './ollamaClient.js';
 import { toolRegistry } from './tools/registry.js';
-import { extractJson, normalizeFeeling, sanitizeHistory } from './parse.js';
+import { extractJson, extractIncompleteText, normalizeFeeling, sanitizeHistory } from './parse.js';
 
 const MAX_LOOP_GUARD = 3;
 // tool output goes back into a 1536 token window, so it can't be unbounded
@@ -23,8 +23,7 @@ Reply with JSON only.`;
 const ANSWER_PROMPT = `You are Max, a short, helpful, and friendly assistant on a Raspberry Pi.
 Respond in Thai when the user asks in Thai.
 State the answer directly from the tool results. Never repeat the user's question as the answer.
-feeling must be one of: happy, neutral, surprised, confused, proud.
-Reply with JSON only: {"text":"...","feeling":"happy"}`;
+Keep your response natural, helpful, and concise (within 2-3 sentences).`;
 
 function clip(text, max) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
@@ -77,9 +76,9 @@ async function synthesizeAnswer({ model, chatFn, history, message, observations 
     model,
     chatFn,
     messages,
-    format: 'json',
     temperature: 0.3,
-    numPredict: ANSWER_TOKENS
+    numPredict: ANSWER_TOKENS,
+    returnDetails: true
   });
 }
 
@@ -139,19 +138,25 @@ export async function runAgent({ message, conversationHistory = [], options = {}
       if (!untried) break;
     }
 
-    const raw = await synthesizeAnswer(ctx);
-    const parsed = extractJson(raw);
+    const synthesized = await synthesizeAnswer(ctx);
+    const raw = typeof synthesized === 'string' ? synthesized : (synthesized?.text || '');
+    const meta = typeof synthesized === 'object' ? synthesized?.meta : null;
 
-    // Small models sometimes skip the json wrapper. A plain sentence is still a usable answer.
-    const plain = !parsed && raw && !raw.trim().startsWith('{') ? clip(raw.trim(), MAX_PLAIN_REPLY_CHARS) : '';
+    const parsed = extractJson(raw);
+    const candidateText = (typeof parsed?.text === 'string' && parsed.text.trim())
+      ? parsed.text.trim()
+      : extractIncompleteText(raw).trim();
+
+    const finalText = candidateText ? clip(candidateText, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
 
     return {
-      text: (typeof parsed?.text === 'string' && parsed.text.trim()) || plain || 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว',
+      text: finalText,
       status: 'idle',
       feeling: normalizeFeeling(parsed?.feeling, defaultFeeling),
       toolsUsed,
-      error: null
+      error: null,
+      meta: meta || undefined
     };
   } catch (error) {
     return {
