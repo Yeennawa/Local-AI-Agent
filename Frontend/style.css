@@ -1,4 +1,3 @@
-
 * {
   box-sizing: border-box;
 }
@@ -12,16 +11,17 @@
   --border-color: #decbd0;
   --text-color: #30282a;
   --muted-text-color: #786b6e;
+  --error-surface: #fbe9eb;
+  --error-border: #d9a3ad;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   font-family: Arial, sans-serif;
   color: var(--text-color);
   background-color: var(--background-color);
 }
-
 
 .app-container {
   width: 100%;
@@ -29,7 +29,6 @@ body {
   margin: 0 auto;
   padding: 48px 20px;
 }
-
 
 .app-header {
   margin-bottom: 32px;
@@ -56,7 +55,6 @@ body {
   font-size: 15px;
 }
 
-
 .prompt-form {
   display: flex;
   gap: 10px;
@@ -81,7 +79,7 @@ body {
 }
 
 .prompt-form input::placeholder {
-  color: #9a8b8f;
+  color: var(--muted-text-color);
 }
 
 .prompt-form button {
@@ -93,14 +91,20 @@ body {
   font: inherit;
   font-weight: bold;
   cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease;
 }
 
 .prompt-form button:hover {
   background-color: var(--primary-dark);
 }
 
+.prompt-form button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .prompt-form button:focus-visible,
-.prompt-form input:focus-visible {
+.prompt-form input:focus-visible,
+.new-chat-button:focus-visible {
   outline: 2px solid var(--primary-color);
   outline-offset: 2px;
 }
@@ -111,6 +115,8 @@ body {
 }
 
 .ai-panel {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   min-height: 360px;
   overflow: hidden;
@@ -118,7 +124,6 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 24px;
 }
-
 
 .ai-profile {
   display: flex;
@@ -145,10 +150,32 @@ body {
   font-size: 13px;
 }
 
+.new-chat-button {
+  padding: 7px 14px;
+  color: var(--primary-dark);
+  background-color: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+}
+
+.new-chat-button:hover {
+  background-color: var(--background-color);
+  border-color: var(--primary-color);
+}
+
+.new-chat-button:active {
+  transform: translateY(1px);
+}
+
 .status-badge {
   padding: 6px 10px;
   color: var(--primary-dark);
-  background-color: #ffffff;
+  background-color: var(--surface-color);
   border: 1px solid var(--border-color);
   border-radius: 20px;
   font-size: 12px;
@@ -163,6 +190,7 @@ body {
   flex-shrink: 0;
   background-color: var(--primary-color);
   border-radius: 16px;
+  transition: transform 0.25s ease, background-color 0.25s ease;
 }
 
 .character-antenna {
@@ -173,6 +201,7 @@ body {
   height: 10px;
   background-color: var(--primary-dark);
   border-radius: 4px;
+  transition: transform 0.25s ease;
 }
 
 .character-antenna::before {
@@ -202,21 +231,101 @@ body {
   height: 9px;
   background-color: var(--primary-dark);
   border-radius: 50%;
+  transition: transform 0.2s ease, height 0.2s ease, width 0.2s ease, border-radius 0.2s ease;
 }
 
+/* Avatar feeling states mapped from agent response */
+.ai-character.happy {
+  transform: translateY(-2px);
+}
 
-.ai-response {
+.ai-character.happy .character-eye {
+  height: 6px;
+  border-radius: 8px 8px 2px 2px;
+}
+
+.ai-character.surprised .character-antenna {
+  transform: translateY(-2px);
+}
+
+.ai-character.surprised .character-eye {
+  width: 9px;
+  height: 11px;
+}
+
+.ai-character.confused {
+  transform: rotate(-6deg);
+}
+
+.ai-character.confused .character-eye:first-child {
+  height: 5px;
+}
+
+.ai-character.proud {
+  transform: scale(1.04);
+  background-color: var(--primary-dark);
+}
+
+.ai-character.proud .character-eye {
+  height: 7px;
+  transform: translateY(-1px);
+}
+
+.chat-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   min-height: 280px;
-  padding: 28px;
-  line-height: 1.7;
+  max-height: 460px;
+  padding: 24px;
+  overflow-y: auto;
+  line-height: 1.65;
+}
+
+.chat-feed:empty::before {
+  content: "สวัสดีครับ ลองพิมพ์คำถามด้านบนเพื่อเริ่มต้นสนทนาได้เลย";
+  color: var(--muted-text-color);
+}
+
+.chat-bubble {
+  max-width: 78%;
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 16px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
-.ai-response p {
-  margin: 0;
+.chat-bubble.user {
+  align-self: flex-end;
+  color: #ffffff;
+  background-color: var(--primary-color);
+  border-bottom-right-radius: 4px;
 }
 
+.chat-bubble.assistant {
+  align-self: flex-start;
+  color: var(--text-color);
+  background-color: var(--soft-pink);
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.thinking {
+  align-self: flex-start;
+  color: var(--muted-text-color);
+  background-color: var(--background-color);
+  border: 1px dashed var(--border-color);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-bubble.error {
+  align-self: flex-start;
+  color: var(--primary-dark);
+  background-color: var(--error-surface);
+  border: 1px solid var(--error-border);
+  border-bottom-left-radius: 4px;
+}
 
 .visually-hidden {
   position: absolute;
@@ -230,6 +339,15 @@ body {
   clip: rect(0, 0, 0, 0);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .prompt-form button,
+  .new-chat-button,
+  .ai-character,
+  .character-antenna,
+  .character-eye {
+    transition: none;
+  }
+}
 
 @media (max-width: 600px) {
   .app-container {
@@ -266,9 +384,14 @@ body {
     padding: 15px;
   }
 
-  .ai-response {
+  .chat-feed {
     min-height: 240px;
-    padding: 20px;
+    max-height: 380px;
+    padding: 18px;
+  }
+
+  .chat-bubble {
+    max-width: 88%;
   }
 
   .status-badge {

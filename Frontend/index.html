@@ -3,14 +3,11 @@
 
 <head>
   <meta charset="UTF-8">
-
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1.0"
   >
-
   <title>Local AI Agent</title>
-
   <link rel="stylesheet" href="style.css">
 </head>
 
@@ -18,15 +15,11 @@
 
   <main class="app-container">
 
-
     <header class="app-header">
       <h1>Local AI Agent</h1>
     </header>
 
-
     <form class="prompt-form" id="prompt-form">
-
-
       <input
         type="text"
         id="prompt-input"
@@ -36,18 +29,16 @@
         autocomplete="off"
         required
       >
-
       <button type="submit" id="send-button">
         ส่ง
       </button>
-
     </form>
 
     <section class="ai-panel" aria-live="polite">
 
       <div class="ai-profile">
 
-        <div class="ai-character" aria-hidden="true">
+        <div class="ai-character neutral" id="ai-character" aria-hidden="true">
           <div class="character-antenna"></div>
 
           <div class="character-face">
@@ -61,23 +52,23 @@
           <p>พร้อมช่วยตอบคำถาม</p>
         </div>
 
+        <button type="button" class="new-chat-button" id="new-chat-button">
+          แชตใหม่
+        </button>
+
         <span class="status-badge">
           Local
         </span>
 
       </div>
 
-   
-      <div class="ai-response" id="ai-response">
-        <p>
-          สวัสดีครับ ลองพิมพ์คำถามด้านบนเพื่อเริ่มต้นสนทนาได้เลย
-        </p>
-      </div>
+      <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>
 
     </section>
 
   </main>
-    <script src="app.js"></script>
+
+  <script src="app.js"></script>
 </body>
-    
+
 </html>

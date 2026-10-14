@@ -1,34 +1,61 @@
-// ค้นหา Element ที่ต้องใช้งานจากหน้า HTML
 const USE_MOCK_API = false;
 const API_URL = "/api/chat";
 const API_TIMEOUT = 60000;
+const FEELINGS = ["happy", "neutral", "surprised", "confused", "proud"];
+
+// Keep turn history in tab memory so the Express server stays stateless across requests.
+const history = [];
+
 const promptForm = document.getElementById("prompt-form");
 const promptInput = document.getElementById("prompt-input");
 const sendButton = document.getElementById("send-button");
-const aiResponse = document.getElementById("ai-response");
-
+const chatFeed = document.getElementById("chat-feed");
+const newChatButton = document.getElementById("new-chat-button");
+const aiCharacter = document.querySelector(".ai-character");
 
 promptForm.addEventListener("submit", handleSubmit);
+if (newChatButton) {
+  newChatButton.addEventListener("click", handleNewChat);
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
   const prompt = promptInput.value.trim();
 
   if (prompt === "") return;
-  showThinkingState();
+
+  promptInput.value = "";
+  appendBubble("user", prompt);
+  const thinkingBubble = appendBubble("thinking", "กำลังคิด...");
+  setLoadingState(true);
+
   try {
-    let answer;
-    if (USE_MOCK_API) {
-      answer = await getMockResponse(prompt);
-    } else {
-      answer = await sendMessageToBackend(prompt);
+    const reply = USE_MOCK_API
+      ? await getMockResponse(prompt)
+      : await sendMessageToBackend(prompt);
+
+    thinkingBubble.remove();
+    setAvatarFeeling(reply.feeling || "neutral");
+
+    if (reply.status === "error") {
+      appendBubble("error", reply.text);
+      return;
     }
-    showAIResponse(answer);
-    promptInput.value = "";
+
+    // Push user and assistant turns together only after a non-error reply so roles always alternate.
+    history.push(
+      { role: "user", content: prompt },
+      { role: "assistant", content: reply.text }
+    );
+    appendBubble("assistant", reply.text);
   } catch (error) {
+    thinkingBubble.remove();
+    setAvatarFeeling("confused");
+
     if (error.name === "AbortError") {
-      showTimeoutMessage();
+      appendBubble("error", "ระบบใช้เวลาตอบนานเกินไป กรุณาลองส่งคำถามอีกครั้ง");
     } else {
-      showErrorMessage();
+      appendBubble("error", "ไม่สามารถเชื่อมต่อระบบ AI ได้ กรุณาลองใหม่อีกครั้ง");
     }
     console.error("เกิดข้อผิดพลาด: ", error);
   } finally {
@@ -36,10 +63,21 @@ async function handleSubmit(event) {
     promptInput.focus();
   }
 }
+
+function handleNewChat() {
+  history.length = 0;
+  chatFeed.replaceChildren();
+  setAvatarFeeling("neutral");
+  promptInput.focus();
+}
+
 function getMockResponse(prompt) {
   return new Promise(function (resolve) {
     setTimeout(function () {
-      resolve(`นี่คือคำตอบจำลองสำหรับคำถาม: ${prompt}`);
+      resolve({
+        text: `นี่คือคำตอบจำลองสำหรับคำถาม: ${prompt}`,
+        feeling: "neutral"
+      });
     }, 1000);
   });
 }
@@ -53,51 +91,47 @@ async function sendMessageToBackend(prompt) {
   try {
     const response = await fetch(API_URL, {
       method: "POST",
-
       headers: {
         "Content-Type": "application/json"
       },
-
+      // Slice to the last 4 turns to mirror the agent's sliding context window and keep request payload size flat.
       body: JSON.stringify({
-        message: prompt
+        message: prompt,
+        conversationHistory: history.slice(-4)
       }),
       signal: controller.signal
     });
 
     if (!response.ok) {
-      throw new Error(
-        `Backend ตอบกลับด้วยสถานะ ${response.status}`
-      );
+      throw new Error(`Backend ตอบกลับด้วยสถานะ ${response.status}`);
     }
+
     const data = await response.json();
 
     if (typeof data.text !== "string") {
-      throw new Error(
-        "Backend ไม่ได้ส่งข้อมูล response กลับมาอย่างถูกต้อง"
-      );
+      throw new Error("Backend ไม่ได้ส่งข้อมูล response กลับมาอย่างถูกต้อง");
     }
 
-    return data.text;
+    return data;
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
-function showThinkingState() {
-  aiResponse.textContent = "กำลังคิด...";
-  setLoadingState(true);
+function appendBubble(kind, text) {
+  const bubble = document.createElement("p");
+  bubble.className = `chat-bubble ${kind}`;
+  bubble.textContent = text;
+  chatFeed.appendChild(bubble);
+  chatFeed.scrollTop = chatFeed.scrollHeight;
+  return bubble;
 }
 
-function showAIResponse(answer) {
-  aiResponse.textContent = answer;
-}
-
-function showErrorMessage() {
-  aiResponse.textContent = "ไม่สามารถเชื่อมต่อระบบ AI ได้ กรุณาลองใหม่อีกครั้ง";
-}
-
-function showTimeoutMessage() {
-  aiResponse.textContent = "ระบบใช้เวลาตอบนานเกินไป กรุณาลองส่งคำถามอีกครั้ง";
+function setAvatarFeeling(feeling) {
+  if (!aiCharacter) return;
+  const nextFeeling = FEELINGS.includes(feeling) ? feeling : "neutral";
+  aiCharacter.classList.remove(...FEELINGS);
+  aiCharacter.classList.add(nextFeeling);
 }
 
 function setLoadingState(isLoading) {
@@ -110,4 +144,3 @@ function setLoadingState(isLoading) {
     sendButton.textContent = "ส่ง";
   }
 }
-
