@@ -1,5 +1,7 @@
 const USE_MOCK_API = false;
+const USE_STREAMING = true;
 const API_URL = "/api/chat";
+const STREAM_API_URL = "/api/chat/stream";
 const API_TIMEOUT = 60000;
 const FEELINGS = ["happy", "neutral", "surprised", "confused", "proud"];
 
@@ -40,15 +42,59 @@ async function handleSubmit(event) {
   const thinkingBubble = appendBubble("thinking", "กำลังคิด...");
   setLoadingState(true);
 
+  let assistantBubble = null;
+
   try {
-    const reply = USE_MOCK_API
-      ? await getMockResponse(prompt)
-      : await sendMessageToBackend(prompt);
+    let reply;
 
-    thinkingBubble.remove();
-    setAvatarFeeling(reply.feeling || "neutral");
+    if (USE_MOCK_API) {
+      reply = await getMockResponse(prompt);
+      thinkingBubble.remove();
+      appendBubble("assistant", reply.text);
+    } else if (USE_STREAMING && window.ReadableStream) {
+      reply = await sendStreamMessageToBackend(prompt, {
+        onStatus: function (statusData) {
+          if (statusData.status === "using_tool") {
+            const toolLabels = {
+              search_wikipedia: "กำลังค้นหา Wikipedia...",
+              calculate: "กำลังคำนวณตัวเลข...",
+              search_github: "กำลังค้นหา GitHub...",
+              get_system_info: "กำลังตรวจสอบสถานะเครื่อง...",
+              get_current_time: "กำลังตรวจสอบเวลา..."
+            };
+            thinkingBubble.textContent = toolLabels[statusData.tool] || `กำลังเรียกใช้ ${statusData.tool}...`;
+          } else if (statusData.status === "synthesizing") {
+            thinkingBubble.textContent = "กำลังเรียบเรียงคำตอบ...";
+          }
+        },
+        onToken: function (token) {
+          if (!assistantBubble) {
+            thinkingBubble.remove();
+            assistantBubble = appendBubble("assistant", "");
+          }
+          assistantBubble.textContent += token;
+          chatFeed.scrollTop = chatFeed.scrollHeight;
+        }
+      });
 
-    if (reply.status === "error") {
+      if (!assistantBubble) {
+        thinkingBubble.remove();
+        if (reply?.text) {
+          appendBubble("assistant", reply.text);
+        }
+      } else if (reply?.text) {
+        assistantBubble.textContent = reply.text;
+      }
+    } else {
+      reply = await sendMessageToBackend(prompt);
+      thinkingBubble.remove();
+      appendBubble("assistant", reply.text);
+    }
+
+    setAvatarFeeling(reply?.feeling || "neutral");
+
+    if (reply?.status === "error") {
+      if (assistantBubble) assistantBubble.remove();
       appendBubble("error", reply.text);
       return;
     }
@@ -58,9 +104,9 @@ async function handleSubmit(event) {
       { role: "user", content: prompt },
       { role: "assistant", content: reply.text }
     );
-    appendBubble("assistant", reply.text);
   } catch (error) {
     thinkingBubble.remove();
+    if (assistantBubble) assistantBubble.remove();
     setAvatarFeeling("confused");
 
     if (error.name === "AbortError") {
@@ -96,6 +142,88 @@ function getMockResponse(prompt) {
       });
     }, 1000);
   });
+}
+
+async function sendStreamMessageToBackend(prompt, { onStatus, onToken } = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(function () {
+    controller.abort();
+  }, API_TIMEOUT);
+
+  try {
+    const response = await fetch(STREAM_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        message: prompt,
+        sessionId: currentSessionId,
+        conversationHistory: history.slice(-4)
+      }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend ตอบกลับด้วยสถานะ ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let finalResult = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop() || "";
+
+      for (const block of blocks) {
+        const trimmed = block.trim();
+        if (!trimmed || trimmed.startsWith(":")) continue;
+
+        let event = "message";
+        let data = "";
+
+        const lines = trimmed.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            event = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            data = line.slice(6).trim();
+          }
+        }
+
+        if (data) {
+          try {
+            const parsed = JSON.parse(data);
+            if (event === "status" && typeof onStatus === "function") {
+              onStatus(parsed);
+            } else if (event === "token" && typeof onToken === "function") {
+              onToken(parsed.token || "");
+            } else if (event === "done") {
+              finalResult = parsed;
+            } else if (event === "error") {
+              finalResult = parsed;
+            }
+          } catch (e) {
+            console.error("SSE parse error", e);
+          }
+        }
+      }
+    }
+
+    if (!finalResult) {
+      throw new Error("สตรีมสิ้นสุดลงโดยไม่มีข้อมูลผลลัพธ์");
+    }
+
+    return finalResult;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function sendMessageToBackend(prompt) {

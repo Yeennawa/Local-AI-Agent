@@ -23,7 +23,8 @@ export async function queryOllama({
   numPredict = 256,
   chatFn = defaultChat,
   keepAlive = DEFAULT_KEEP_ALIVE,
-  returnDetails = false
+  returnDetails = false,
+  onToken = undefined
 }) {
   let stream;
   let stallTimer = null;
@@ -77,7 +78,11 @@ export async function queryOllama({
 
     for await (const part of stream) {
       resetStallTimer();
-      text += part?.message?.content || '';
+      const chunk = part?.message?.content || '';
+      text += chunk;
+      if (chunk && typeof onToken === 'function') {
+        onToken(chunk);
+      }
       if (part?.done) {
         doneReason = part.done_reason || doneReason;
         meta = {

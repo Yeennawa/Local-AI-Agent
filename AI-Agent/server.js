@@ -100,6 +100,81 @@ export function createApp(agentOptions = {}, queue = requestQueue) {
     }
   });
 
+  // Server-Sent Events (SSE) streaming endpoint
+  app.post('/api/chat/stream', async (req, res) => {
+    const { message, conversationHistory, sessionId } = req.body || {};
+    const effectiveSessionId = sessionId || req.headers['x-session-id'] || null;
+
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({
+        text: 'ข้อความไม่ถูกต้อง กรุณาระบุข้อความที่ต้องการถามครับ',
+        status: 'error',
+        feeling: 'confused',
+        toolsUsed: [],
+        error: 'Message must be a non-empty string'
+      });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const sendSSE = (event, data) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const heartbeatTimer = setInterval(() => {
+      res.write(': ping\n\n');
+    }, 15000);
+
+    const history = Array.isArray(conversationHistory) ? conversationHistory : [];
+
+    try {
+      await queue.enqueue(async () => {
+        const result = await runAgent({
+          message: message.trim(),
+          conversationHistory: history,
+          sessionId: effectiveSessionId,
+          options: {
+            ...agentOptions,
+            onStatus: (st) => sendSSE('status', st),
+            onToken: (tok) => sendSSE('token', { token: tok })
+          }
+        });
+
+        if (effectiveSessionId) {
+          result.sessionId = effectiveSessionId;
+        }
+
+        sendSSE('done', result);
+        return result;
+      });
+    } catch (error) {
+      if (error?.status === 503) {
+        sendSSE('error', {
+          text: 'ขณะนี้มีผู้ใช้งานพร้อมกันจำนวนมาก กรุณารอสักครู่แล้วลองใหม่อีกครั้งครับ',
+          status: 'error',
+          feeling: 'confused',
+          toolsUsed: [],
+          error: error.message || 'Server busy: Queue is full'
+        });
+      } else {
+        console.error(error);
+        sendSSE('error', {
+          text: 'AI มีปัญหา',
+          status: 'error',
+          feeling: 'confused',
+          toolsUsed: [],
+          error: error?.message || 'Internal server error'
+        });
+      }
+    } finally {
+      clearInterval(heartbeatTimer);
+      res.end();
+    }
+  });
+
   app.delete('/api/chat/session/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     if (sessionId) {

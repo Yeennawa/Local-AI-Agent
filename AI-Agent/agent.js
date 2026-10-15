@@ -63,7 +63,7 @@ async function decideNextStep({ model, chatFn, history, message, observations })
   return extractJson(raw);
 }
 
-async function synthesizeAnswer({ model, chatFn, history, message, observations }) {
+async function synthesizeAnswer({ model, chatFn, history, message, observations, onToken }) {
   const systemContent = observations.length
     ? `${ANSWER_PROMPT}\n\nTool results:\n${observations.join('\n')}`
     : ANSWER_PROMPT;
@@ -80,7 +80,8 @@ async function synthesizeAnswer({ model, chatFn, history, message, observations 
     messages,
     temperature: 0.3,
     numPredict: ANSWER_TOKENS,
-    returnDetails: true
+    returnDetails: true,
+    onToken
   });
 }
 
@@ -110,6 +111,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   }
 
   const effectiveSessionId = sessionId || options.sessionId || null;
+  const onStatus = typeof options.onStatus === 'function' ? options.onStatus : null;
+  const onToken = typeof options.onToken === 'function' ? options.onToken : null;
 
   // 1. Zero-Token Lexical Meta-Recall (Meta conversation check e.g. "คำถามแรกคืออะไร")
   if (effectiveSessionId) {
@@ -121,6 +124,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         toolUsed: null,
         isMeta: true
       });
+      if (onToken) {
+        onToken(metaAnswer);
+      }
       return {
         text: metaAnswer,
         status: 'idle',
@@ -144,7 +150,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const history = sanitizeHistory(rawHistory);
   const useRouter = options.useRouter !== undefined ? options.useRouter : true;
   const focusEntity = options.focusEntity || (effectiveSessionId ? sessionMemory.getFocusEntity(effectiveSessionId) : null);
-  const ctx = { model, chatFn, history, message, observations };
+  const ctx = { model, chatFn, history, message, observations, onToken };
 
   try {
     const route = useRouter ? routeIntent({ message, history, focusEntity }) : null;
@@ -153,6 +159,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       if (route.intent === 'tool' && route.toolCall) {
         const name = route.toolCall.name;
         if (toolRegistry.hasTool(name)) {
+          onStatus?.({ status: 'using_tool', tool: name, params: route.toolCall.params });
           const execResult = await toolRegistry.executeTool(name, route.toolCall.params);
           toolsUsed.push(execResult);
           observations.push(describeOutcome(execResult));
@@ -176,6 +183,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
           break;
         }
 
+        onStatus?.({ status: 'using_tool', tool: name, params: toolCall.params });
         const execResult = await toolRegistry.executeTool(name, toolCall.params);
         toolsUsed.push(execResult);
         observations.push(describeOutcome(execResult));
@@ -186,6 +194,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       }
     }
 
+    onStatus?.({ status: 'synthesizing' });
     const synthesized = await synthesizeAnswer(ctx);
     const raw = typeof synthesized === 'string' ? synthesized : (synthesized?.text || '');
     const meta = typeof synthesized === 'object' ? synthesized?.meta : null;
