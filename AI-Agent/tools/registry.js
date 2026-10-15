@@ -1,6 +1,8 @@
 import { systemInfoTool } from './systemInfo.js';
 import { timeTool } from './time.js';
 import { wikiTool } from './wiki.js';
+import { calculateTool } from './calculator.js';
+import { githubTool } from './github.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 5000;
 
@@ -11,6 +13,8 @@ export class ToolRegistry {
     this.registerTool(systemInfoTool);
     this.registerTool(timeTool);
     this.registerTool(wikiTool);
+    this.registerTool(calculateTool);
+    this.registerTool(githubTool);
   }
 
   registerTool(tool) {

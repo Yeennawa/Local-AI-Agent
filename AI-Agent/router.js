@@ -41,6 +41,26 @@ export function extractTopic(message, focusEntity = null) {
   return cleaned;
 }
 
+export function extractMathExpression(message) {
+  if (typeof message !== 'string') return '';
+  let cleaned = message.trim();
+  cleaned = cleaned.replace(/^(?:ช่วย(?:คำนวณ|คิดเลข)?|คำนวณ|คิดเลข|หาค่า(?:ของ)?|calculate|solve)\s*/i, '');
+  cleaned = cleaned.replace(/\s*(?:ได้เท่าไหร่|เท่ากับเท่าไหร่|ได้เท่าใด|คือเท่าไหร่|มีค่าเท่าใด|ให้หน่อย(?:ครับ|ค่ะ|นะ)?|หน่อย(?:ครับ|ค่ะ|นะ)?|ครับ|ค่ะ|นะ|\?)+$/i, '');
+  return cleaned.trim();
+}
+
+export function extractGithubQuery(message) {
+  if (typeof message !== 'string') return '';
+  let cleaned = message.trim();
+  cleaned = cleaned.replace(/^(?:ช่วย(?:หา|ค้นหา)?|อยาก(?:ดู|เห็น|ค้นหา)|ขอดู|ค้นหา|หา|เสิร์ช|search|find)\s*/i, '');
+  cleaned = cleaned.replace(/(?:ใน|บน)?\s*github\s*(?:หน่อย|ให้หน่อย|ด้วย)?/i, ' ');
+  cleaned = cleaned.replace(/(?:repo|repository|โปรเจกต์|คลังโค้ด)\s*/i, ' ');
+  cleaned = cleaned.replace(/^(?:for\s+)/i, '');
+  cleaned = cleaned.replace(/\s*(?:ให้หน่อย(?:ครับ|ค่ะ|นะ)?|หน่อย(?:ครับ|ค่ะ|นะ)?|ด้วย(?:ครับ|ค่ะ)?|ครับ|ค่ะ|นะ|\?)+$/i, '');
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  return cleaned;
+}
+
 export function routeIntent({ message, history = [], focusEntity = null }) {
   if (typeof message !== 'string' || !message.trim()) {
     return { intent: 'finish', toolCall: null, confidence: 'high', reason: 'empty_input' };
@@ -101,7 +121,43 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     };
   }
 
-  // 5. Knowledge & Conceptual Questions (Wikipedia)
+  // 5. Math and Calculation Check
+  const isMathQuery = /(?:คำนวณ|คิดเลข|calculate|solve)/i.test(raw) ||
+    /\d+\s*(?:บวก|\+|\-|คูณ|\*|หาร|\/)\s*\d+/.test(raw) ||
+    /\(?\d+\s*[\+\-\*\/]\s*\d+\)?/.test(raw);
+  if (isMathQuery) {
+    const expression = extractMathExpression(raw);
+    if (expression) {
+      return {
+        intent: 'tool',
+        toolCall: {
+          name: 'calculate',
+          params: { expression }
+        },
+        confidence: 'high',
+        reason: 'arithmetic_calculation'
+      };
+    }
+  }
+
+  // 6. GitHub Search Check (Open source & repository search)
+  const isGithubQuery = /(?:github|repo\b|repository\b|คลังโค้ด)/i.test(raw);
+  if (isGithubQuery) {
+    const query = extractGithubQuery(raw);
+    if (query) {
+      return {
+        intent: 'tool',
+        toolCall: {
+          name: 'search_github',
+          params: { query }
+        },
+        confidence: 'high',
+        reason: 'github_search'
+      };
+    }
+  }
+
+  // 7. Knowledge & Conceptual Questions (Wikipedia)
   const isKnowledgeQuery = /(?:คืออะไร|คือใคร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain)/i.test(raw);
   if (isKnowledgeQuery || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
     const topic = extractTopic(raw, focusEntity);
@@ -118,7 +174,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     }
   }
 
-  // 6. Ambiguous / Complex request requiring LLM reasoning
+  // 8. Ambiguous / Complex request requiring LLM reasoning
   return {
     intent: 'unknown',
     toolCall: null,
