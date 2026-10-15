@@ -1,8 +1,10 @@
 import express from 'express';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
 import { sessionMemory } from './memory.js';
+import { RequestQueue, requestQueue } from './queue.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,11 +13,37 @@ const __dirname = path.dirname(__filename);
 // and oversized payloads would waste RAM on the Raspberry Pi 5 before sanitizeHistory even runs.
 const JSON_BODY_LIMIT = '32kb';
 
-export function createApp(agentOptions = {}) {
+export function createApp(agentOptions = {}, queue = requestQueue) {
   const app = express();
 
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(express.static(path.join(__dirname, '../Frontend')));
+
+  // Health check endpoint for hardware telemetry on Raspberry Pi 5
+  app.get('/api/health', (_req, res) => {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    return res.json({
+      status: 'healthy',
+      platform: process.platform,
+      uptime: Math.round(process.uptime()),
+      memory: {
+        totalMB: Math.round(totalMem / (1024 * 1024)),
+        freeMB: Math.round(freeMem / (1024 * 1024)),
+        usedMB: Math.round(usedMem / (1024 * 1024)),
+        usagePercent: Math.round(((usedMem / totalMem) * 100) * 10) / 10
+      },
+      queue: {
+        pending: queue.pendingCount,
+        active: queue.activeCount,
+        totalProcessed: queue.totalProcessed
+      },
+      sessions: {
+        activeCount: sessionMemory.sessionCount
+      }
+    });
+  });
 
   app.post('/api/chat', async (req, res) => {
     try {
@@ -34,11 +62,14 @@ export function createApp(agentOptions = {}) {
 
       const history = Array.isArray(conversationHistory) ? conversationHistory : [];
 
-      const result = await runAgent({
-        message: message.trim(),
-        conversationHistory: history,
-        sessionId: effectiveSessionId,
-        options: agentOptions
+      // Enforce strict FIFO serialization through RequestQueue to prevent Pi 5 OOM
+      const result = await queue.enqueue(async () => {
+        return runAgent({
+          message: message.trim(),
+          conversationHistory: history,
+          sessionId: effectiveSessionId,
+          options: agentOptions
+        });
       });
 
       if (effectiveSessionId) {
@@ -47,6 +78,16 @@ export function createApp(agentOptions = {}) {
 
       return res.json(result);
     } catch (error) {
+      if (error?.status === 503) {
+        return res.status(503).json({
+          text: 'ขณะนี้มีผู้ใช้งานพร้อมกันจำนวนมาก กรุณารอสักครู่แล้วลองใหม่อีกครั้งครับ',
+          status: 'error',
+          feeling: 'confused',
+          toolsUsed: [],
+          error: error.message || 'Server busy: Queue is full'
+        });
+      }
+
       console.error(error);
 
       return res.status(500).json({
