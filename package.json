@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node AI-Agent/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "eval": "node tests/eval/runner.js"
   },
   "repository": {
     "type": "git",

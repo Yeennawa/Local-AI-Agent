@@ -70,7 +70,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   const lower = raw.toLowerCase();
 
   // 1. Pure Greetings and Polite Chit-chat
-  const isGreeting = /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|hello(?:\s+there)?|hi(?:\s+there)?|hey|good\s+(?:morning|evening|afternoon)|ขอบคุณ(?:มาก)?(?:นะ)?(?:ครับ|ค่ะ)?|thanks(?:\s+a\s+lot)?|thank\s+you|บาย(?:ครับ|ค่ะ)?|ลาก่อน|bye|goodbye)\s*$/i.test(raw);
+  const isGreeting = /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|hello(?:\s+there)?|hi(?:\s+there)?|hey|good\s+(?:morning|evening|afternoon)|สบายดีไหม|เป็นไงบ้าง|เป็นอย่างไรบ้าง|ขอบคุณ(?:มาก)?(?:นะ)?(?:ครับ|ค่ะ)?|thanks(?:\s+a\s+lot)?|thank\s+you|บาย(?:ครับ|ค่ะ|นะ)?|ลาก่อน(?:ครับ|ค่ะ|นะ)?|bye|goodbye)\s*$/i.test(raw);
   if (isGreeting) {
     return { intent: 'finish', toolCall: null, confidence: 'high', reason: 'greeting_chat' };
   }
@@ -108,7 +108,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   // 4. System Info Check (Hardware & OS metrics)
-  const isSystemMetric = /(?:แรม|หน่วยความจำ|สเปก|สเปค|สถานะเครื่อง|อุณหภูมิ|ความจุ|ฮาร์ดแวร์|cpu|ram|memory|uptime|system info)/i.test(raw);
+  const isSystemMetric = /(?:แรม|หน่วยความจำ|สเปก|สเปค|สถานะเครื่อง|อุณหภูมิ|ความจุ|ฮาร์ดแวร์|เปิดเครื่อง|เปิดทำงาน|cpu|ram|memory|uptime|system info)/i.test(raw);
   if (isSystemMetric) {
     return {
       intent: 'tool',
@@ -123,7 +123,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
 
   // 5. Math and Calculation Check
   const isMathQuery = /(?:คำนวณ|คิดเลข|calculate|solve)/i.test(raw) ||
-    /\d+\s*(?:บวก|\+|\-|คูณ|\*|หาร|\/)\s*\d+/.test(raw) ||
+    /\d+\s*(?:บวก|ลบ|\+|\-|คูณ|\*|หาร|\/)\s*\d+/.test(raw) ||
     /\(?\d+\s*[\+\-\*\/]\s*\d+\)?/.test(raw);
   if (isMathQuery) {
     const expression = extractMathExpression(raw);
