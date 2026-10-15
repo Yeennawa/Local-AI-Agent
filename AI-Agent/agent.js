@@ -1,6 +1,7 @@
 import { queryOllama } from './ollamaClient.js';
 import { toolRegistry } from './tools/registry.js';
 import { extractJson, extractIncompleteText, normalizeFeeling, sanitizeHistory } from './parse.js';
+import { routeIntent } from './router.js';
 
 const MAX_LOOP_GUARD = 3;
 // tool output goes back into a 1536 token window, so it can't be unbounded
@@ -112,30 +113,48 @@ export async function runAgent({ message, conversationHistory = [], options = {}
   const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
   const chatFn = options.chatFn;
   const history = sanitizeHistory(conversationHistory);
+  const useRouter = options.useRouter !== undefined ? options.useRouter : true;
+  const focusEntity = options.focusEntity || null;
   const ctx = { model, chatFn, history, message, observations };
 
   try {
-    for (let step = 0; step < MAX_LOOP_GUARD; step++) {
-      const decision = await decideNextStep(ctx);
-      const toolCall = resolveToolCall(decision);
-      if (!toolCall) break;
+    const route = useRouter ? routeIntent({ message, history, focusEntity }) : null;
 
-      const name = toolCall.name;
-
-      if (toolsUsed.some((t) => t.tool === name)) break;
-
-      if (!toolRegistry.hasTool(name)) {
-        observations.push(`${name}: not available`);
-        break;
+    if (route && route.confidence === 'high') {
+      if (route.intent === 'tool' && route.toolCall) {
+        const name = route.toolCall.name;
+        if (toolRegistry.hasTool(name)) {
+          const execResult = await toolRegistry.executeTool(name, route.toolCall.params);
+          toolsUsed.push(execResult);
+          observations.push(describeOutcome(execResult));
+        } else {
+          observations.push(`${name}: not available`);
+        }
       }
+      // If route.intent === 'finish', no tools are needed; proceed directly to synthesizeAnswer.
+    } else {
+      // Fallback: ReAct loop for ambiguous requests or when useRouter is disabled
+      for (let step = 0; step < MAX_LOOP_GUARD; step++) {
+        const decision = await decideNextStep(ctx);
+        const toolCall = resolveToolCall(decision);
+        if (!toolCall) break;
 
-      const execResult = await toolRegistry.executeTool(name, toolCall.params);
-      toolsUsed.push(execResult);
-      observations.push(describeOutcome(execResult));
+        const name = toolCall.name;
+        if (toolsUsed.some((t) => t.tool === name)) break;
 
-      // Nothing left to try, so another decision call would only burn tokens.
-      const untried = toolRegistry.getAllTools().some((t) => !toolsUsed.some((u) => u.tool === t.name));
-      if (!untried) break;
+        if (!toolRegistry.hasTool(name)) {
+          observations.push(`${name}: not available`);
+          break;
+        }
+
+        const execResult = await toolRegistry.executeTool(name, toolCall.params);
+        toolsUsed.push(execResult);
+        observations.push(describeOutcome(execResult));
+
+        // Nothing left to try, so another decision call would only burn tokens.
+        const untried = toolRegistry.getAllTools().some((t) => !toolsUsed.some((u) => u.tool === t.name));
+        if (!untried) break;
+      }
     }
 
     const synthesized = await synthesizeAnswer(ctx);
