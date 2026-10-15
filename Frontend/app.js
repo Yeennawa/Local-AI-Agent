@@ -6,6 +6,17 @@ const FEELINGS = ["happy", "neutral", "surprised", "confused", "proud"];
 // Keep turn history in tab memory so the Express server stays stateless across requests.
 const history = [];
 
+function getOrCreateSessionId() {
+  let id = localStorage.getItem("ai_agent_session_id");
+  if (!id) {
+    id = "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    localStorage.setItem("ai_agent_session_id", id);
+  }
+  return id;
+}
+
+let currentSessionId = getOrCreateSessionId();
+
 const promptForm = document.getElementById("prompt-form");
 const promptInput = document.getElementById("prompt-input");
 const sendButton = document.getElementById("send-button");
@@ -65,6 +76,11 @@ async function handleSubmit(event) {
 }
 
 function handleNewChat() {
+  if (currentSessionId) {
+    fetch(`/api/chat/session/${currentSessionId}`, { method: "DELETE" }).catch(function () {});
+  }
+  currentSessionId = "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+  localStorage.setItem("ai_agent_session_id", currentSessionId);
   history.length = 0;
   chatFeed.replaceChildren();
   setAvatarFeeling("neutral");
@@ -94,9 +110,10 @@ async function sendMessageToBackend(prompt) {
       headers: {
         "Content-Type": "application/json"
       },
-      // Slice to the last 4 turns to mirror the agent's sliding context window and keep request payload size flat.
+      // Send sessionId for continuous session memory along with sliding history window
       body: JSON.stringify({
         message: prompt,
+        sessionId: currentSessionId,
         conversationHistory: history.slice(-4)
       }),
       signal: controller.signal

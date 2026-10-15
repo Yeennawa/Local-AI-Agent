@@ -1,7 +1,8 @@
 import { queryOllama } from './ollamaClient.js';
 import { toolRegistry } from './tools/registry.js';
 import { extractJson, extractIncompleteText, normalizeFeeling, sanitizeHistory } from './parse.js';
-import { routeIntent } from './router.js';
+import { routeIntent, extractTopic } from './router.js';
+import { sessionMemory } from './memory.js';
 
 const MAX_LOOP_GUARD = 3;
 // tool output goes back into a 1536 token window, so it can't be unbounded
@@ -97,7 +98,7 @@ function resolveToolCall(decision) {
   return null;
 }
 
-export async function runAgent({ message, conversationHistory = [], options = {} }) {
+export async function runAgent({ message, conversationHistory = [], sessionId = null, options = {} }) {
   if (!message || typeof message !== 'string') {
     return {
       text: 'ข้อความไม่ถูกต้อง กรุณาระบุข้อความที่ต้องการถามครับ',
@@ -108,13 +109,41 @@ export async function runAgent({ message, conversationHistory = [], options = {}
     };
   }
 
+  const effectiveSessionId = sessionId || options.sessionId || null;
+
+  // 1. Zero-Token Lexical Meta-Recall (Meta conversation check e.g. "คำถามแรกคืออะไร")
+  if (effectiveSessionId) {
+    const metaAnswer = sessionMemory.answerMetaRecall(effectiveSessionId, message);
+    if (metaAnswer) {
+      sessionMemory.recordTurn(effectiveSessionId, {
+        userQuery: message,
+        assistantText: metaAnswer,
+        toolUsed: null,
+        isMeta: true
+      });
+      return {
+        text: metaAnswer,
+        status: 'idle',
+        feeling: 'happy',
+        toolsUsed: [],
+        error: null
+      };
+    }
+  }
+
   const toolsUsed = [];
   const observations = [];
   const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
   const chatFn = options.chatFn;
-  const history = sanitizeHistory(conversationHistory);
+
+  // If conversationHistory was not provided by caller but sessionId exists, assemble from sessionMemory
+  const rawHistory = (Array.isArray(conversationHistory) && conversationHistory.length > 0)
+    ? conversationHistory
+    : (effectiveSessionId ? sessionMemory.getAssembledContext(effectiveSessionId) : []);
+
+  const history = sanitizeHistory(rawHistory);
   const useRouter = options.useRouter !== undefined ? options.useRouter : true;
-  const focusEntity = options.focusEntity || null;
+  const focusEntity = options.focusEntity || (effectiveSessionId ? sessionMemory.getFocusEntity(effectiveSessionId) : null);
   const ctx = { model, chatFn, history, message, observations };
 
   try {
@@ -168,6 +197,21 @@ export async function runAgent({ message, conversationHistory = [], options = {}
 
     const finalText = candidateText ? clip(candidateText, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
+
+    // Record turn in session memory if sessionId was provided
+    if (effectiveSessionId) {
+      const topicEntity = toolsUsed[0]?.params?.topic ||
+        toolsUsed[0]?.result?.title ||
+        extractTopic(message, focusEntity) ||
+        null;
+
+      sessionMemory.recordTurn(effectiveSessionId, {
+        userQuery: message,
+        assistantText: finalText,
+        toolUsed: toolsUsed[0]?.tool || null,
+        focusEntity: topicEntity
+      });
+    }
 
     return {
       text: finalText,

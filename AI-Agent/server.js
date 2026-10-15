@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
+import { sessionMemory } from './memory.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +19,8 @@ export function createApp(agentOptions = {}) {
 
   app.post('/api/chat', async (req, res) => {
     try {
-      const { message, conversationHistory } = req.body || {};
+      const { message, conversationHistory, sessionId } = req.body || {};
+      const effectiveSessionId = sessionId || req.headers['x-session-id'] || null;
 
       if (typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({
@@ -35,8 +37,13 @@ export function createApp(agentOptions = {}) {
       const result = await runAgent({
         message: message.trim(),
         conversationHistory: history,
+        sessionId: effectiveSessionId,
         options: agentOptions
       });
+
+      if (effectiveSessionId) {
+        result.sessionId = effectiveSessionId;
+      }
 
       return res.json(result);
     } catch (error) {
@@ -50,6 +57,21 @@ export function createApp(agentOptions = {}) {
         error: error?.message || 'Internal server error'
       });
     }
+  });
+
+  app.delete('/api/chat/session/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    if (sessionId) {
+      sessionMemory.clearSession(sessionId);
+    }
+    return res.json({ success: true, message: `Session ${sessionId} cleared` });
+  });
+
+  app.get('/api/chat/session/:sessionId', (req, res) => {
+    const { sessionId } = req.params;
+    const history = sessionMemory.getHistory(sessionId);
+    const focusEntity = sessionMemory.getFocusEntity(sessionId);
+    return res.json({ sessionId, history, focusEntity });
   });
 
   app.use((err, _req, res, next) => {
