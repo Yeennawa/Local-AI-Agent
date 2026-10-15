@@ -3,6 +3,7 @@ import { timeTool } from './time.js';
 import { wikiTool } from './wiki.js';
 import { calculateTool } from './calculator.js';
 import { githubTool } from './github.js';
+import { newsTool } from './news.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 5000;
 
@@ -15,6 +16,7 @@ export class ToolRegistry {
     this.registerTool(wikiTool);
     this.registerTool(calculateTool);
     this.registerTool(githubTool);
+    this.registerTool(newsTool);
   }
 
   registerTool(tool) {

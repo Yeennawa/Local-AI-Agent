@@ -3,6 +3,7 @@ import { toolRegistry } from './tools/registry.js';
 import { extractJson, extractIncompleteText, normalizeFeeling, sanitizeHistory } from './parse.js';
 import { routeIntent, extractTopic } from './router.js';
 import { sessionMemory } from './memory.js';
+import { buildDirectReply } from './replies.js';
 
 const MAX_LOOP_GUARD = 3;
 // tool output goes back into a 1536 token window, so it can't be unbounded
@@ -25,6 +26,7 @@ Reply with JSON only.`;
 const ANSWER_PROMPT = `You are Max, a short, helpful, and friendly assistant on a Raspberry Pi.
 Respond in Thai when the user asks in Thai.
 State the answer directly from the tool results. Never repeat the user's question as the answer.
+Never invent facts, news, dates, or abilities. For factual questions, use only the tool results given; if there are none, say you do not have that information.
 Keep your response natural, helpful, and concise (within 2-3 sentences).`;
 
 function clip(text, max) {
@@ -152,10 +154,28 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const focusEntity = options.focusEntity || (effectiveSessionId ? sessionMemory.getFocusEntity(effectiveSessionId) : null);
   const ctx = { model, chatFn, history, message, observations, onToken };
 
+  // Deterministic answers: record the turn, stream the text, never call the model.
+  const replyWithoutModel = (text, { feeling = 'neutral', focusEntity: focus } = {}) => {
+    if (effectiveSessionId) {
+      sessionMemory.recordTurn(effectiveSessionId, {
+        userQuery: message,
+        assistantText: text,
+        toolUsed: toolsUsed[0]?.tool || null,
+        focusEntity: focus
+      });
+    }
+    onToken?.(text);
+    return { text, status: 'idle', feeling, toolsUsed, error: null };
+  };
+
   try {
     const route = useRouter ? routeIntent({ message, history, focusEntity }) : null;
 
     if (route && route.confidence === 'high') {
+      if (route.intent === 'direct') {
+        const text = buildDirectReply(route.reason, toolRegistry.getAllTools());
+        if (text) return replyWithoutModel(text, { feeling: 'happy' });
+      }
       if (route.intent === 'tool' && route.toolCall) {
         const name = route.toolCall.name;
         if (toolRegistry.hasTool(name)) {
@@ -163,6 +183,11 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
           const execResult = await toolRegistry.executeTool(name, route.toolCall.params);
           toolsUsed.push(execResult);
           observations.push(describeOutcome(execResult));
+
+          // A tool that found nothing already holds the honest answer; do not let the model improvise.
+          if (execResult.success && execResult.result?.found === false && execResult.result.message) {
+            return replyWithoutModel(execResult.result.message);
+          }
         } else {
           observations.push(`${name}: not available`);
         }
