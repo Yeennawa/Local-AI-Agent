@@ -101,6 +101,52 @@ export function isCapabilityInquiry(message) {
 const UNSUPPORTED_PLATFORM_REGEX = /facebook|เฟซบุ๊ก|เฟซบุ้ก|เฟสบุ๊ก|เฟสบุ้ก|twitter|ทวิตเตอร์|\bx\.com\b|instagram|อินสตาแกรม|\btiktok\b|ติ๊กต่อก|reddit|เรดดิท/i;
 const READ_INTENT_REGEX = /ดู|อ่าน|ค้น|หา|เช็ค|โพสต์|เปิด|ข่าว|สรุป|แนะนำ|เล่า|\bread\b|\bsearch\b|\bnews\b|\bsummar/i;
 
+const WEATHER_FILLER_REGEX = /(?:สภาพ)?อากาศ|พยากรณ์(?:อากาศ)?|ที่|ใน|ของ|วันนี้|ตอนนี้|ปัจจุบัน|เป็น(?:ยัง)?ไง(?:บ้าง)?|เป็นอย่างไร(?:บ้าง)?|ฝนจะตกไหม|ฝนตกไหม|จะตกไหม|ตกไหม|ไหม|มั้ย|ครับ|ค่ะ|นะ|หน่อย|current|weather|forecast|today|now|in|\?/gi;
+
+export function extractWeatherLocation(message) {
+  if (typeof message !== 'string') return 'Bangkok';
+  const cleaned = message.replace(WEATHER_FILLER_REGEX, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned.length >= 2 ? cleaned : 'Bangkok';
+}
+
+const FX_REGEX = /(?:อัตราแลกเปลี่ยน|ค่าเงิน|แลกเงิน|แปลงเงิน|exchange\s*rate|currency|\bto\s*thb\b)/i;
+
+export function extractFxParams(message) {
+  if (typeof message !== 'string') return { base: 'USD', target: 'THB', amount: 1 };
+
+  const amountMatch = message.match(/(\d+(?:\.\d+)?)/);
+  const amount = amountMatch ? parseFloat(amountMatch[1]) : 1;
+
+  let base = 'USD';
+  if (/เยน|jpy/i.test(message)) base = 'JPY';
+  else if (/ยูโร|eur/i.test(message)) base = 'EUR';
+  else if (/ปอนด์|gbp/i.test(message)) base = 'GBP';
+  else if (/หยวน|cny/i.test(message)) base = 'CNY';
+  else if (/วอน|krw/i.test(message)) base = 'KRW';
+  else if (/ดอลลาร์สิงคโปร์|sgd/i.test(message)) base = 'SGD';
+  else if (/ดอลลาร์|เหรียญสหรัฐ|usd/i.test(message)) base = 'USD';
+  else if (/บาท|thb/i.test(message) && !/กี่บาท|เป็นเงินไทย/i.test(message)) base = 'THB';
+
+  let target = 'THB';
+  const targetMatch = message.match(/to\s+([a-z]{3})/i);
+  const targetQ = message.match(/(?:กี่|เท่ากับ|เป็น)\s*([a-z]{3})/i);
+  if (targetMatch) {
+    target = targetMatch[1].toUpperCase();
+  } else if (targetQ) {
+    target = targetQ[1].toUpperCase();
+  } else if (/เป็น\s*(?:ดอลลาร์|usd)/i.test(message)) {
+    target = 'USD';
+  } else if (/เป็น\s*(?:เยน|jpy)/i.test(message)) {
+    target = 'JPY';
+  }
+
+  if (base === target && base === 'THB') {
+    base = 'USD';
+  }
+
+  return { base, target, amount };
+}
+
 export function routeIntent({ message, history = [], focusEntity = null }) {
   if (typeof message !== 'string' || !message.trim()) {
     return { intent: 'finish', toolCall: null, confidence: 'high', reason: 'empty_input' };
@@ -132,6 +178,41 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
       toolCall: { name: 'get_news', params: extractNewsParams(raw) },
       confidence: 'high',
       reason: 'news_lookup'
+    };
+  }
+
+  // 1e. Weather & Forecast Check
+  const isHardwareTemp = /อุณหภูมิ\s*(?:ของ)?(?:เครื่อง|cpu|ซีพียู)/i.test(raw);
+  const isWeatherQuery = !isHardwareTemp && (
+    /(?:สภาพ)?อากาศ|พยากรณ์อากาศ|ฝนจะตกไหม|ฝนตกไหม|จะตกไหม|weather|forecast/i.test(raw) ||
+    (/(?:อุณหภูมิ|temperature)/i.test(raw) && !/cpu|ซีพียู|เครื่อง|ฮาร์ดแวร์|แรม|ram/i.test(raw))
+  );
+  if (isWeatherQuery) {
+    const location = extractWeatherLocation(raw);
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'get_weather',
+        params: { location }
+      },
+      confidence: 'high',
+      reason: 'weather_lookup'
+    };
+  }
+
+  // 1f. Foreign Exchange & Currency Conversion Check
+  const isFxQuery = /(?:อัตราแลกเปลี่ยน|ค่าเงิน|แลกเงิน|แปลงเงิน|exchange\s*rate|currency|\bto\s*[a-z]{3}\b)/i.test(raw) ||
+    /(?:\d+\s*)?(?:usd|thb|jpy|eur|gbp|ดอลลาร์|เยน|ยูโร|ปอนด์)\s*(?:เท่ากับ|เป็นเงินไทย|เป็น)?\s*กี่\s*(?:[a-z]{3}|บาท|ดอลลาร์|เยน|ยูโร|วอน|หยวน)/i.test(raw);
+  if (isFxQuery) {
+    const params = extractFxParams(raw);
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'get_fx',
+        params
+      },
+      confidence: 'high',
+      reason: 'fx_lookup'
     };
   }
 
@@ -168,7 +249,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   // 4. System Info Check (Hardware & OS metrics)
-  const isSystemMetric = /(?:แรม|หน่วยความจำ|สเปก|สเปค|สถานะเครื่อง|อุณหภูมิ|ความจุ|ฮาร์ดแวร์|เปิดเครื่อง|เปิดทำงาน|cpu|ram|memory|uptime|system info)/i.test(raw);
+  const isSystemMetric = /(?:แรม|หน่วยความจำ|สเปก|สเปค|สถานะเครื่อง|ความจุ|ฮาร์ดแวร์|เปิดเครื่อง|เปิดทำงาน|cpu|ram|memory|uptime|system info|อุณหภูมิ\s*(?:ของ)?(?:เครื่อง|cpu|ซีพียู))/i.test(raw);
   if (isSystemMetric) {
     return {
       intent: 'tool',

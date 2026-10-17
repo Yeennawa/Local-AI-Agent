@@ -4,6 +4,8 @@ import { wikiTool } from './wiki.js';
 import { calculateTool } from './calculator.js';
 import { githubTool } from './github.js';
 import { newsTool } from './news.js';
+import { weatherTool } from './weather.js';
+import { fxTool } from './fx.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 5000;
 
@@ -17,6 +19,8 @@ export class ToolRegistry {
     this.registerTool(calculateTool);
     this.registerTool(githubTool);
     this.registerTool(newsTool);
+    this.registerTool(weatherTool);
+    this.registerTool(fxTool);
   }
 
   registerTool(tool) {
