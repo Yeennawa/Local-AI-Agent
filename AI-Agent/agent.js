@@ -2,6 +2,7 @@ import { queryOllama } from './ollamaClient.js';
 import { toolRegistry } from './tools/registry.js';
 import { extractJson, extractIncompleteText, normalizeFeeling, sanitizeHistory } from './parse.js';
 import { routeIntent, extractTopic } from './router.js';
+import { normalizeQuery } from './normalizer.js';
 import { sessionMemory } from './memory.js';
 import { buildDirectReply } from './replies.js';
 
@@ -26,7 +27,7 @@ Reply with JSON only.`;
 const ANSWER_PROMPT = `You are Max, a short, helpful, and friendly assistant on a Raspberry Pi.
 Respond in Thai when the user asks in Thai.
 State the answer directly from the tool results. Never repeat the user's question as the answer.
-Never invent facts, news, dates, or abilities. For factual questions, use only the tool results given; if there are none, say you do not have that information.
+If tool results are provided, extract and summarize the answer clearly. Never invent facts, news, dates, or abilities. If no information is found at all, state that politely.
 Keep your response natural, helpful, and concise (within 2-3 sentences).`;
 
 function clip(text, max) {
@@ -216,6 +217,21 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         // Nothing left to try, so another decision call would only burn tokens.
         const untried = toolRegistry.getAllTools().some((t) => !toolsUsed.some((u) => u.tool === t.name));
         if (!untried) break;
+      }
+
+      // Fallback: If no tools were invoked by decision, but query has clear knowledge intent,
+      // attempt a single fallback retrieval with search_wikipedia before giving up to synthesis.
+      if (toolsUsed.length === 0 && toolRegistry.hasTool('search_wikipedia')) {
+        const norm = normalizeQuery(message, { focusEntity });
+        if (norm.isKnowledgeIntent && norm.canonicalTopic) {
+          onStatus?.({ status: 'using_tool', tool: 'search_wikipedia', params: { topic: norm.canonicalTopic } });
+          const execResult = await toolRegistry.executeTool('search_wikipedia', { topic: norm.canonicalTopic });
+          toolsUsed.push(execResult);
+          observations.push(describeOutcome(execResult));
+          if (execResult.success && execResult.result?.found === false && execResult.result.message) {
+            return replyWithoutModel(execResult.result.message);
+          }
+        }
       }
     }
 

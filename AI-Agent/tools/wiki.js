@@ -1,6 +1,8 @@
 // Wikipedia Search Tool with Relevance Scoring, LRU Caching, and Sentence Clipping
 // Prevents semantic drift and ensures clean encyclopedic context within token budget.
 
+import { computeThaiBigramContainment, normalizeQuery, expandAbbreviations } from '../normalizer.js';
+
 const MAX_EXTRACT_CHARS = 450;
 const FETCH_TIMEOUT_MS = 4500;
 const USER_AGENT = 'LocalAIAgent/1.0 (https://github.com/Yeennawa/Local-AI-Agent; student-project@local.ai)';
@@ -8,18 +10,6 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_CACHE_ENTRIES = 100;
 
 const wikiCache = new Map();
-
-const TRANSLITERATION_ALIASES = {
-  'ราสเบอร์รีพาย': 'Raspberry Pi',
-  'ราสเบอร์รี่พาย': 'Raspberry Pi',
-  'รัสเบอรี่พาย': 'Raspberry Pi',
-  'ไพทอน': 'Python (programming language)',
-  'ไพธอน': 'Python (programming language)',
-  'จาวาสคริปต์': 'JavaScript',
-  'จาวาสคริป': 'JavaScript',
-  'ลินุกซ์': 'Linux',
-  'ด็อกเกอร์': 'Docker'
-};
 
 function getFromCache(key) {
   const entry = wikiCache.get(key);
@@ -39,41 +29,77 @@ function setInCache(key, data) {
   wikiCache.set(key, { data, timestamp: Date.now() });
 }
 
-function clipAtSentenceBoundary(text, maxChars) {
+const THAI_ABBR_REGEX = /(?:พ\.ศ\.|ค\.ศ\.|ดร\.|พ\.ร\.บ\.|จ\.|อ\.|ต\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.)$/;
+
+export function clipAtSentenceBoundary(text, maxChars = MAX_EXTRACT_CHARS) {
   if (!text || text.length <= maxChars) return text;
 
   const slice = text.slice(0, maxChars);
-  // Find last sentence boundary in the slice
-  const lastPeriod = Math.max(
-    slice.lastIndexOf('. '),
-    slice.lastIndexOf('.\n'),
-    slice.lastIndexOf('! '),
-    slice.lastIndexOf('? ')
-  );
+  let bestIdx = -1;
+  const delimiters = ['. ', '.\n', '! ', '? ', '\n'];
 
-  if (lastPeriod > maxChars * 0.6) {
-    return slice.slice(0, lastPeriod + 1).trim();
+  for (const sep of delimiters) {
+    const idx = slice.lastIndexOf(sep);
+    if (idx > bestIdx) {
+      const candidate = slice.slice(0, idx + 1).trim();
+      if (!THAI_ABBR_REGEX.test(candidate)) {
+        bestIdx = idx;
+      }
+    }
   }
 
-  // Fallback to last whitespace
+  if (bestIdx > maxChars * 0.6) {
+    return slice.slice(0, bestIdx + 1).trim();
+  }
+
   const lastSpace = slice.lastIndexOf(' ');
   if (lastSpace > maxChars * 0.7) {
-    return `${slice.slice(0, lastSpace).trim()}...`;
+    const candidate = slice.slice(0, lastSpace).trim();
+    if (!THAI_ABBR_REGEX.test(candidate)) {
+      return `${candidate}...`;
+    }
   }
 
   return `${slice.trim()}...`;
 }
 
-function computeRelevance(hitTitle, query) {
-  const normTitle = hitTitle.toLowerCase().trim();
-  const normQuery = query.toLowerCase().trim();
+export function computeRelevance(hitOrTitle, rawQuery) {
+  const hit = typeof hitOrTitle === 'object' && hitOrTitle !== null
+    ? hitOrTitle
+    : { title: String(hitOrTitle || '') };
 
-  if (normTitle === normQuery) return 1.0;
-  if (normTitle.includes(normQuery) || normQuery.includes(normTitle)) return 0.8;
+  const normTitle = (hit.title || '').toLowerCase().trim();
+  const redirect = (hit.redirecttitle || '').toLowerCase().trim();
+  const query = (rawQuery || '').toLowerCase().trim();
+  const expandedQuery = expandAbbreviations(query).toLowerCase().trim();
 
-  // Split into tokens
+  // 1. Direct redirect match: Wikipedia itself knows the redirect alias
+  if (redirect) {
+    if (redirect === query || query === redirect) return 1.0;
+    if (redirect.includes(query) || query.includes(redirect)) return 0.95;
+    if (redirect === expandedQuery || expandedQuery.includes(redirect)) return 0.95;
+  }
+
+  // 2. Exact or direct title match
+  if (normTitle === query || normTitle === expandedQuery) return 1.0;
+  if (normTitle.includes(query) || query.includes(normTitle)) return 0.85;
+  if (expandedQuery && (normTitle.includes(expandedQuery) || expandedQuery.includes(normTitle))) return 0.85;
+
+  // 3. Thai Bigram Containment for compound words with infixes (e.g. นายกไทย vs นายกรัฐมนตรีไทย)
+  const isThai = /[\u0E00-\u0E7F]/.test(query);
+  if (isThai) {
+    const bigramScore = Math.max(
+      computeThaiBigramContainment(query, normTitle),
+      expandedQuery ? computeThaiBigramContainment(expandedQuery, normTitle) : 0
+    );
+    if (bigramScore >= 0.65) {
+      return bigramScore;
+    }
+  }
+
+  // 4. Token match fallback for whitespace-separated words
   const titleTokens = normTitle.split(/[\s\-()/,]+/).filter((t) => t.length > 1);
-  const queryTokens = normQuery.split(/[\s\-()/,]+/).filter((t) => t.length > 1);
+  const queryTokens = query.split(/[\s\-()/,]+/).filter((t) => t.length > 1);
 
   if (queryTokens.length === 0 || titleTokens.length === 0) return 0.0;
 
@@ -102,7 +128,6 @@ async function fetchWikiJson(url) {
       return null;
     } catch (err) {
       if (err.name === 'TypeError' && err.message?.includes('fetch failed')) {
-        // Fast offline / DNS failure
         throw err;
       }
       if (attempt === 0) {
@@ -117,7 +142,7 @@ async function fetchWikiJson(url) {
 
 async function fetchWikiExtract(lang, query) {
   const endpoint = `https://${lang}.wikipedia.org/w/api.php`;
-  const searchUrl = `${endpoint}?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=3&utf8=1`;
+  const searchUrl = `${endpoint}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srprop=snippet|redirecttitle&format=json&srlimit=5&utf8=1`;
 
   const searchData = await fetchWikiJson(searchUrl);
   const hits = searchData?.query?.search;
@@ -128,14 +153,14 @@ async function fetchWikiExtract(lang, query) {
   let bestScore = -1;
 
   for (const hit of hits) {
-    const score = computeRelevance(hit.title, query);
+    const score = computeRelevance(hit, query);
     if (score > bestScore) {
       bestScore = score;
       bestHit = hit;
     }
   }
 
-  // Reject irrelevant hits (prevents semantic drift e.g. "ราสเบอร์รีพาย" -> "เรือพาย")
+  // Reject irrelevant hits
   if (!bestHit || bestScore < 0.35) {
     return null;
   }
@@ -172,46 +197,46 @@ export const wikiTool = {
       return { error: 'Topic parameter is required and cannot be empty' };
     }
 
-    const topic = rawTopic.trim();
-    const cacheKey = topic.toLowerCase();
+    const { canonicalTopic, searchCandidates } = normalizeQuery(rawTopic);
+    const searchTarget = canonicalTopic || rawTopic.trim();
+    const cacheKey = searchTarget.toLowerCase();
 
-    // Check in-memory cache first (0ms latency, zero network)
+    // Check in-memory cache first
     const cached = getFromCache(cacheKey);
     if (cached) {
       return cached;
     }
 
-    // Resolve known transliteration aliases
-    let normalizedTopic = topic;
-    for (const [alias, standard] of Object.entries(TRANSLITERATION_ALIASES)) {
-      if (topic === alias || topic.includes(alias)) {
-        normalizedTopic = standard;
-        break;
-      }
-    }
-
-    const hasThai = /[\u0E00-\u0E7F]/.test(normalizedTopic);
+    const candidates = searchCandidates.length > 0 ? searchCandidates : [searchTarget];
 
     try {
       let result = null;
 
-      // 1. Search Thai Wikipedia if topic contains Thai characters
-      if (hasThai) {
-        result = await fetchWikiExtract('th', normalizedTopic);
+      // Try candidates in order
+      for (const candidate of candidates) {
+        const hasThai = /[\u0E00-\u0E7F]/.test(candidate);
+
+        if (hasThai) {
+          result = await fetchWikiExtract('th', candidate);
+        }
+
+        if (!result) {
+          result = await fetchWikiExtract('en', candidate);
+        }
+
+        if (result) break;
       }
 
-      // 2. Fallback to English Wikipedia if no relevant Thai article found
       if (!result) {
-        const enQuery = normalizedTopic !== topic ? normalizedTopic : topic;
-        result = await fetchWikiExtract('en', enQuery);
-      }
-
-      if (!result) {
-        return { message: `ไม่พบข้อมูลที่เกี่ยวข้องใน Wikipedia สำหรับ "${topic}"` };
+        return {
+          found: false,
+          message: `ไม่พบข้อมูลที่เกี่ยวข้องใน Wikipedia สำหรับ "${rawTopic}"`
+        };
       }
 
       const summary = clipAtSentenceBoundary(result.extract, MAX_EXTRACT_CHARS);
       const payload = {
+        found: true,
         title: result.title,
         summary
       };
@@ -220,9 +245,15 @@ export const wikiTool = {
       return payload;
     } catch (error) {
       if (error.name === 'TypeError' && error.message?.includes('fetch failed')) {
-        return { error: 'ขณะนี้ระบบออฟไลน์ ไม่สามารถเข้าถึง Wikipedia ได้' };
+        return {
+          found: false,
+          error: 'ขณะนี้ระบบออฟไลน์ ไม่สามารถเข้าถึง Wikipedia ได้'
+        };
       }
-      return { error: `Wikipedia lookup failed: ${error.message || 'Network error'}` };
+      return {
+        found: false,
+        error: `Wikipedia lookup failed: ${error.message || 'Network error'}`
+      };
     }
   }
 };

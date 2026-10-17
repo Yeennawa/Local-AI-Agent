@@ -1,44 +1,9 @@
-// Intent Router (Deep Module)
-// Provides deterministic, 0-token intent classification and parameter extraction
-// before falling back to small LLM decisions, preventing common small-model routing bugs.
-
-const ALIASES = {
-  'ราสเบอร์รีพาย': 'Raspberry Pi',
-  'ราสเบอร์รี่พาย': 'Raspberry Pi',
-  'รัสเบอรี่พาย': 'Raspberry Pi'
-};
-
-const FILLER_PREFIX_REGEX = /^(?:ช่วย(?:หา|ค้นหา)?(?:ข้อมูล|ประวัติ)?(?:เกี่ยวกับ|ของ)?|อยาก(?:รู้|ทราบ)(?:ข้อมูล|ประวัติ)?(?:เกี่ยวกับ|ของ)?|ประวัติ(?:ความ(?:เป็น)?มา)?(?:ของ)?|ความ(?:เป็น)?มาของ|ข้อมูลเกี่ยวกับ|เล่า(?:เรื่อง|ประวัติ)?(?:ของ)?|ค้นหา(?:เรื่อง)?|เสิร์ช|search for|what is|who is|tell me about|info about|information about)\s*/i;
-
-const FILLER_SUFFIX_REGEX = /\s*(?:คืออะไร(?:นะ|ครับ|ค่ะ)?|คือใคร(?:นะ|ครับ|ค่ะ)?|อยู่ที่ไหน|หมายถึงอะไร|ทำงานอย่างไร|ทำอะไรได้บ้าง|คือสิ่งใด|หน่อย(?:ครับ|ค่ะ|นะ)?|ให้หน่อย(?:ครับ|ค่ะ|นะ)?|ด้วย(?:ครับ|ค่ะ)?|ครับ|ค่ะ|นะ|จ้า|จ๊ะ|\?)+$/i;
-
-const POLITENESS_REGEX = /\s*(?:ครับ|ค่ะ|จ้า|นะ|หน่อย|ด้วย|จ๊ะ|ขอรับ|รบกวน|ช่วย)\s*/g;
+import { normalizeQuery, expandAbbreviations } from './normalizer.js';
 
 export function extractTopic(message, focusEntity = null) {
   if (typeof message !== 'string') return '';
-  let cleaned = message.trim();
-
-  // Coreference resolution for simple Thai pronouns when a focus entity exists
-  if (focusEntity && /(?:แล้ว)?มัน(?:คืออะไร|คือใคร|มีอะไร)/i.test(cleaned)) {
-    return focusEntity;
-  }
-
-  // Remove leading conversational prompts
-  cleaned = cleaned.replace(FILLER_PREFIX_REGEX, '');
-
-  // Remove trailing question tags and politeness
-  cleaned = cleaned.replace(FILLER_SUFFIX_REGEX, '');
-  cleaned = cleaned.replace(POLITENESS_REGEX, ' ');
-  cleaned = cleaned.replace(/\s+/g, ' ').trim();
-
-  // Check alias table
-  for (const [thaiName, standardName] of Object.entries(ALIASES)) {
-    if (cleaned === thaiName || cleaned.includes(thaiName)) {
-      return standardName;
-    }
-  }
-
-  return cleaned;
+  const { canonicalTopic } = normalizeQuery(message, { focusEntity });
+  return canonicalTopic;
 }
 
 export function extractMathExpression(message) {
@@ -52,10 +17,10 @@ export function extractMathExpression(message) {
 export function extractGithubQuery(message) {
   if (typeof message !== 'string') return '';
   let cleaned = message.trim();
-  cleaned = cleaned.replace(/^(?:ช่วย(?:หา|ค้นหา)?|อยาก(?:ดู|เห็น|ค้นหา)|ขอดู|ค้นหา|หา|เสิร์ช|search|find)\s*/i, '');
-  cleaned = cleaned.replace(/(?:ใน|บน)?\s*github\s*(?:หน่อย|ให้หน่อย|ด้วย)?/i, ' ');
-  cleaned = cleaned.replace(/(?:repo|repository|โปรเจกต์|คลังโค้ด)\s*/i, ' ');
-  cleaned = cleaned.replace(/^(?:for\s+)/i, '');
+  cleaned = cleaned.replace(/^(?:ช่วย(?:หา|ค้นหา)?|อยาก(?:ดู|เห็น|ค้นหา)|ขอดู|ค้นหา|หา|เสิร์ช|search|find)\s*/i, '').trim();
+  cleaned = cleaned.replace(/(?:ใน|บน)?\s*github\s*(?:หน่อย|ให้หน่อย|ด้วย)?/i, ' ').trim();
+  cleaned = cleaned.replace(/(?:repo|repository|โปรเจกต์|คลังโค้ด)\s*/i, ' ').trim();
+  cleaned = cleaned.replace(/^(?:for\s+)/i, '').trim();
   cleaned = cleaned.replace(/\s*(?:ให้หน่อย(?:ครับ|ค่ะ|นะ)?|หน่อย(?:ครับ|ค่ะ|นะ)?|ด้วย(?:ครับ|ค่ะ)?|ครับ|ค่ะ|นะ|\?)+$/i, '');
   cleaned = cleaned.replace(/\s+/g, ' ').trim();
   return cleaned;
@@ -219,7 +184,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   // 2. Conflict Rule: Person / Entity / Office-holder questions
   // Questions containing "ใคร" or government/leadership roles must NEVER be routed to time tool,
   // even if they contain temporal words like "ตอนนี้", "ปัจจุบัน", "now", "currently".
-  const hasPersonOrOfficeRole = /(?:ใคร|ใครคือ|คือใคร|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|who|who is|prime minister|president)/i.test(raw);
+  const hasPersonOrOfficeRole = /(?:ใคร|ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who|who is|prime minister|president)/i.test(raw);
   if (hasPersonOrOfficeRole) {
     const topic = extractTopic(raw, focusEntity) || (raw.includes('นายก') ? 'นายกรัฐมนตรีไทย' : raw);
     return {
@@ -299,7 +264,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   // 7. Knowledge & Conceptual Questions (Wikipedia)
-  const isKnowledgeQuery = /(?:คืออะไร|คือใคร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain)/i.test(raw);
+  const isKnowledgeQuery = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
   if (isKnowledgeQuery || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
     const topic = extractTopic(raw, focusEntity);
     if (topic && topic.length >= 2) {
