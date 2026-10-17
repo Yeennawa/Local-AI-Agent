@@ -21,6 +21,8 @@ export async function queryOllama({
   maxTimeoutMs = 120000,
   temperature = 0.2,
   numPredict = 256,
+  repeatPenalty = 1.18,
+  topP = 0.9,
   chatFn = defaultChat,
   keepAlive = DEFAULT_KEEP_ALIVE,
   returnDetails = false,
@@ -60,6 +62,8 @@ export async function queryOllama({
       stream: true,
       options: {
         temperature,
+        top_p: topP,
+        repeat_penalty: repeatPenalty,
         num_ctx: NUM_CTX,
         num_thread: NUM_THREAD,
         num_predict: numPredict

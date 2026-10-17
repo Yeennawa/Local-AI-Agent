@@ -1,4 +1,4 @@
-// Wikipedia Search Tool with Relevance Scoring, LRU Caching, and Sentence Clipping
+// Wikipedia Search Tool with Relevance Scoring, LRU Caching, Deep Passage Retrieval, and Sentence Clipping
 // Prevents semantic drift and ensures clean encyclopedic context within token budget.
 
 import { computeThaiBigramContainment, normalizeQuery, expandAbbreviations } from '../normalizer.js';
@@ -63,6 +63,73 @@ export function clipAtSentenceBoundary(text, maxChars = MAX_EXTRACT_CHARS) {
   return `${slice.trim()}...`;
 }
 
+export function cleanArticleClutter(text) {
+  if (typeof text !== 'string') return '';
+  let cleaned = text
+    .replace(/(?:,\s*)?(?:ออกเสียง|เสียงอ่าน|IPA|pronunciation)\s*:[^;)]+/gi, '')
+    .replace(/\s*หรือ\s+[^(]+\((?:เสียงอ่าน|ออกเสียง)[^;)]*;\s*/g, ' (')
+    .replace(/\[[ˈʔa-zA-Zʁɛbɪʃt\s/:,.-]+\]/g, '')
+    .replace(/\(\s*;\s*/g, '(')
+    .replace(/\(\s*\)/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+  return cleaned;
+}
+
+export function buildFocusedExtract(rawText, focusKeywords = [], maxChars = MAX_EXTRACT_CHARS) {
+  if (!rawText) return '';
+  const cleaned = cleanArticleClutter(rawText);
+  if (!cleaned) return '';
+
+  const kws = Array.isArray(focusKeywords) ? focusKeywords.filter((k) => typeof k === 'string' && k.length > 0) : [];
+  const matchesKeyword = (str, kw) => str.toLowerCase().includes(kw.toLowerCase());
+
+  // 1. If no focus keywords, simply clip lead
+  if (kws.length === 0) {
+    return clipAtSentenceBoundary(cleaned, maxChars);
+  }
+
+  // 2. If the text within the initial slice already contains all/any focusKeyword, clip directly
+  const initialSlice = cleaned.slice(0, maxChars);
+  if (kws.some((kw) => matchesKeyword(initialSlice, kw))) {
+    return clipAtSentenceBoundary(cleaned, maxChars);
+  }
+
+  // 3. Find the best matching position for focusKeywords in the entire article
+  let bestIdx = -1;
+  for (const kw of kws) {
+    const idx = cleaned.toLowerCase().indexOf(kw.toLowerCase());
+    if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
+      bestIdx = idx;
+    }
+  }
+
+  if (bestIdx !== -1) {
+    // Find natural starting boundary before bestIdx (e.g. space or newline 40-70 chars before)
+    let start = Math.max(0, bestIdx - 60);
+    const prevNewline = cleaned.lastIndexOf('\n', bestIdx);
+    const prevSpace = cleaned.lastIndexOf(' ', bestIdx);
+    if (prevNewline >= bestIdx - 80) {
+      start = prevNewline + 1;
+    } else if (prevSpace >= bestIdx - 60) {
+      start = prevSpace + 1;
+    }
+
+    // Take a passage from start up to ~280 characters
+    const passageSlice = cleaned.slice(start, start + 280);
+    const passage = clipAtSentenceBoundary(passageSlice, 270);
+
+    // Lead prefix (first sentence or up to 140 chars)
+    let leadPrefix = clipAtSentenceBoundary(cleaned, 140);
+    if (!leadPrefix.endsWith('...')) leadPrefix += '...';
+
+    const combined = `${leadPrefix}\n${passage}`;
+    return clipAtSentenceBoundary(combined, maxChars);
+  }
+
+  return clipAtSentenceBoundary(cleaned, maxChars);
+}
+
 export function computeRelevance(hitOrTitle, rawQuery) {
   const hit = typeof hitOrTitle === 'object' && hitOrTitle !== null
     ? hitOrTitle
@@ -70,8 +137,23 @@ export function computeRelevance(hitOrTitle, rawQuery) {
 
   const normTitle = (hit.title || '').toLowerCase().trim();
   const redirect = (hit.redirecttitle || '').toLowerCase().trim();
+  const snippet = (hit.snippet || '').replace(/<[^>]+>/g, '').toLowerCase().trim();
   const query = (rawQuery || '').toLowerCase().trim();
   const expandedQuery = expandAbbreviations(query).toLowerCase().trim();
+
+  // Multi-token subject anchor check:
+  // When a query has multiple space-separated words (e.g. "แมว ช็อกโกแลต"), the primary subject is the first word.
+  // If the primary subject is completely absent from title and redirect, reject hit (< 0.35).
+  const queryWords = query.split(/[\s\-()/,]+/).filter((w) => w.length > 1);
+  if (queryWords.length > 1) {
+    const primaryWord = queryWords[0];
+    const hasPrimary = normTitle.includes(primaryWord) ||
+      redirect.includes(primaryWord) ||
+      (expandedQuery && (normTitle.includes(expandedQuery.split(/\s+/)[0]) || redirect.includes(expandedQuery.split(/\s+/)[0])));
+    if (!hasPrimary) {
+      return 0.1;
+    }
+  }
 
   // 1. Direct redirect match: Wikipedia itself knows the redirect alias
   if (redirect) {
@@ -85,7 +167,7 @@ export function computeRelevance(hitOrTitle, rawQuery) {
   if (normTitle.includes(query) || query.includes(normTitle)) return 0.85;
   if (expandedQuery && (normTitle.includes(expandedQuery) || expandedQuery.includes(normTitle))) return 0.85;
 
-  // 3. Thai Bigram Containment for compound words with infixes (e.g. นายกไทย vs นายกรัฐมนตรีไทย)
+  // 4. Thai Bigram Containment for compound words with infixes (e.g. นายกไทย vs นายกรัฐมนตรีไทย)
   const isThai = /[\u0E00-\u0E7F]/.test(query);
   if (isThai) {
     const bigramScore = Math.max(
@@ -97,7 +179,7 @@ export function computeRelevance(hitOrTitle, rawQuery) {
     }
   }
 
-  // 4. Token match fallback for whitespace-separated words
+  // 5. Token match fallback for whitespace-separated words
   const titleTokens = normTitle.split(/[\s\-()/,]+/).filter((t) => t.length > 1);
   const queryTokens = query.split(/[\s\-()/,]+/).filter((t) => t.length > 1);
 
@@ -140,7 +222,7 @@ async function fetchWikiJson(url) {
   return null;
 }
 
-async function fetchWikiExtract(lang, query) {
+async function fetchWikiExtract(lang, query, focusKeywords = []) {
   const endpoint = `https://${lang}.wikipedia.org/w/api.php`;
   const searchUrl = `${endpoint}?action=query&list=search&srsearch=${encodeURIComponent(query)}&srprop=snippet|redirecttitle&format=json&srlimit=5&utf8=1`;
 
@@ -148,33 +230,45 @@ async function fetchWikiExtract(lang, query) {
   const hits = searchData?.query?.search;
   if (!Array.isArray(hits) || hits.length === 0) return null;
 
-  // Find best scoring hit above relevance threshold
-  let bestHit = null;
-  let bestScore = -1;
+  // Rank hits by relevance
+  const scoredHits = hits.map((hit) => ({
+    hit,
+    score: computeRelevance(hit, query)
+  })).filter((h) => h.score >= 0.35)
+    .sort((a, b) => b.score - a.score);
 
-  for (const hit of hits) {
-    const score = computeRelevance(hit, query);
-    if (score > bestScore) {
-      bestScore = score;
-      bestHit = hit;
-    }
-  }
-
-  // Reject irrelevant hits
-  if (!bestHit || bestScore < 0.35) {
+  if (scoredHits.length === 0) {
     return null;
   }
 
-  const extractUrl = `${endpoint}?action=query&prop=extracts&exintro=1&explaintext=1&pageids=${bestHit.pageid}&format=json&utf8=1`;
-  const extractData = await fetchWikiJson(extractUrl);
-  const page = extractData?.query?.pages?.[bestHit.pageid];
-  const extract = page?.extract?.trim();
+  // Iterate over candidates in score order to skip disambiguation pages
+  for (const { hit } of scoredHits) {
+    const extractUrl = `${endpoint}?action=query&prop=extracts|pageprops&explaintext=1&pageids=${hit.pageid}&format=json&utf8=1`;
+    const extractData = await fetchWikiJson(extractUrl);
+    const page = extractData?.query?.pages?.[hit.pageid];
+    const rawExtract = page?.extract?.trim();
 
-  if (!extract) return null;
-  return {
-    title: bestHit.title,
-    extract
-  };
+    if (!rawExtract) continue;
+
+    // Disambiguation check
+    if (page?.pageprops && 'disambiguation' in page.pageprops) {
+      continue;
+    }
+    const leadSample = rawExtract.slice(0, 150).toLowerCase();
+    if (leadSample.includes('อาจหมายถึง') || leadSample.includes('may refer to') || leadSample.includes('can refer to')) {
+      continue;
+    }
+
+    const cleanExtract = buildFocusedExtract(rawExtract, focusKeywords, MAX_EXTRACT_CHARS);
+    if (!cleanExtract) continue;
+
+    return {
+      title: hit.title,
+      extract: cleanExtract
+    };
+  }
+
+  return null;
 }
 
 export const wikiTool = {
@@ -197,7 +291,7 @@ export const wikiTool = {
       return { error: 'Topic parameter is required and cannot be empty' };
     }
 
-    const { canonicalTopic, searchCandidates } = normalizeQuery(rawTopic);
+    const { canonicalTopic, focusKeywords, searchCandidates } = normalizeQuery(rawTopic);
     const searchTarget = canonicalTopic || rawTopic.trim();
     const cacheKey = searchTarget.toLowerCase();
 
@@ -214,14 +308,12 @@ export const wikiTool = {
 
       // Try candidates in order
       for (const candidate of candidates) {
-        const hasThai = /[\u0E00-\u0E7F]/.test(candidate);
+        // 1. Thai Wikipedia first for all candidates (even English names like ChatGPT, Python)
+        result = await fetchWikiExtract('th', candidate, focusKeywords);
 
-        if (hasThai) {
-          result = await fetchWikiExtract('th', candidate);
-        }
-
+        // 2. Fallback to English Wikipedia
         if (!result) {
-          result = await fetchWikiExtract('en', candidate);
+          result = await fetchWikiExtract('en', candidate, focusKeywords);
         }
 
         if (result) break;

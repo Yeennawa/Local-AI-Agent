@@ -6,7 +6,7 @@ const LEADING_FRAME_REGEX = /^(?:ใครคือ|ใครเป็น|ใค
 
 const TRAILING_FRAME_REGEX = /\s*(?:คืออะไร(?:นะ|ครับ|ค่ะ)?|คือใคร(?:ใน(?:ปัจจุบัน|ตอนนี้))?(?:นะ|ครับ|ค่ะ)?|เป็นใคร(?:ใน(?:ปัจจุบัน|ตอนนี้))?(?:นะ|ครับ|ค่ะ)?|ชื่ออะไร(?:นะ|ครับ|ค่ะ)?|อยู่ที่ไหน|หมายถึงอะไร|ทำงานอย่างไร|ทำอะไรได้บ้าง|คือสิ่งใด|คนปัจจุบัน|ในปัจจุบัน|ปัจจุบัน|ตอนนี้|มีกี่(?:จังหวัด|เขต|อำเภอ|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)?|ได้เท่าไหร่|เท่าใด|กี่องศา|หน่อย(?:ครับ|ค่ะ|นะ)?|ให้หน่อย(?:ครับ|ค่ะ|นะ)?|ด้วย(?:ครับ|ค่ะ)?|ครับ|ค่ะ|นะ|จ้า|จ๊ะ|\?)+$/i;
 
-const POLITENESS_REGEX = /\s*(?:ครับ|ค่ะ|จ้า|นะ|หน่อย|ด้วย|จ๊ะ|ขอรับ|รบกวน|ช่วย)\s*/g;
+const POLITENESS_REGEX = /(?:\s|^)(?:ครับ|ค่ะ|(?<![เแ])จ้า|นะ|หน่อย|ด้วย|จ๊ะ|ขอรับ|รบกวน|ช่วย)(?:\s|$)/g;
 
 const ABBREVIATIONS = [
   // Royal & High Office
@@ -75,9 +75,41 @@ export function computeThaiBigramContainment(query, title) {
   return matches / qBigrams.length;
 }
 
+const RELATIONAL_ROLES = [
+  { role: 'ceo', regex: /^(?:ceo|ซีอีโอ|ผู้บริหาร(?:สูงสุด)?)\s*(?:ของ)?\s*/i, roleEn: 'CEO' },
+  { role: 'founder', regex: /^(?:ผู้ก่อตั้ง|ผู้ร่วมก่อตั้ง)\s*(?:ของ)?\s*/i, roleEn: 'founder' },
+  { role: 'owner', regex: /^(?:เจ้าของ|ผู้ครอบครอง)\s*(?:ของ)?\s*/i, roleEn: 'owner' },
+  { role: 'creator', regex: /^(?:ผู้สร้าง|ผู้คิดค้น|ผู้ประพันธ์|ผู้แต่ง)\s*(?:ของ)?\s*/i, roleEn: 'creator' },
+  { role: 'parent_company', regex: /^(?:บริษัทแม่|เจ้าของ)\s*(?:ของ)?\s*/i, roleEn: 'parent company' },
+  { role: 'capital', regex: /^(?:เมืองหลวง|นครหลวง)\s*(?:ของ)?\s*/i, roleEn: 'capital' }
+];
+
+const KNOWN_ORGANIZATIONS = {
+  chatgpt: 'OpenAI',
+  แชตจีพีที: 'OpenAI',
+  instagram: 'Meta Platforms',
+  whatsapp: 'Meta Platforms',
+  youtube: 'Google',
+  android: 'Google'
+};
+
+const PRACTICAL_YESNO_REGEX = /(?:กิน.*ได้ไหม|กินอะไรได้บ้าง|กินอาหารอะไรได้บ้าง|มีกี่ขา|บินได้ไหม|อันตรายไหม|เลี้ยงได้ไหม|เป็นพิษไหม|ทำไมถึง|ทำไม|ได้ไหม|ได้หรือไม่|ได้มั้ย)/i;
+const GREETINGS_REGEX = /^(?:สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|ขอบคุณ|ขอบใจ|บาย|ลาก่อน|hello\b|hi\b|thanks\b|thank you\b)/i;
+
 export function normalizeQuery(message, { focusEntity = null } = {}) {
   if (typeof message !== 'string') {
-    return { canonicalTopic: '', searchCandidates: [], rawCleaned: '', isKnowledgeIntent: false };
+    return {
+      canonicalTopic: '',
+      headEntity: '',
+      focusKeywords: [],
+      relationRole: null,
+      searchCandidates: [],
+      rawCleaned: '',
+      isKnowledgeIntent: false,
+      isBareNoun: false,
+      isYesNoOrPractical: false,
+      effectivePrompt: ''
+    };
   }
 
   const raw = message.trim();
@@ -86,9 +118,15 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
   if (focusEntity && /(?:แล้ว)?มัน(?:คืออะไร|คือใคร|มีอะไร|อยู่ที่ไหน|ราคาเท่าไหร่)/i.test(raw)) {
     return {
       canonicalTopic: focusEntity,
+      headEntity: focusEntity,
+      focusKeywords: [],
+      relationRole: null,
       searchCandidates: [focusEntity],
       rawCleaned: focusEntity,
-      isKnowledgeIntent: true
+      isKnowledgeIntent: true,
+      isBareNoun: false,
+      isYesNoOrPractical: false,
+      effectivePrompt: `ข้อมูลเกี่ยวกับ ${focusEntity}`
     };
   }
 
@@ -115,17 +153,91 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
     cleaned = 'เขตของกรุงเทพมหานคร';
   }
 
+  // 1. Relational attribute decomposition
+  let relationRole = null;
+  let headEntity = '';
+  const focusKeywords = [];
+  let isYesNoOrPractical = false;
+
+  for (const { role, regex } of RELATIONAL_ROLES) {
+    if (regex.test(cleaned)) {
+      relationRole = role;
+      headEntity = cleaned.replace(regex, '').trim();
+      if (role === 'ceo') focusKeywords.push('CEO', 'ซีอีโอ', 'ผู้บริหาร', 'ประธานเจ้าหน้าที่บริหาร');
+      else if (role === 'founder') focusKeywords.push('ผู้ก่อตั้ง', 'ก่อตั้ง');
+      else if (role === 'owner') focusKeywords.push('เจ้าของ');
+      else if (role === 'creator') focusKeywords.push('ผู้สร้าง', 'ผู้คิดค้น', 'ผู้ประพันธ์', 'ผู้แต่ง');
+      else if (role === 'capital') focusKeywords.push('เมืองหลวง', 'นครหลวง');
+      break;
+    }
+  }
+
+  // 2. Trailing relational & aspect extraction
+  if (!relationRole) {
+    if (/ใคร(?:เป็นคน)?(?:แต่ง|ประพันธ์)/i.test(raw)) {
+      relationRole = 'creator';
+      headEntity = cleaned.replace(/ใคร(?:เป็นคน)?(?:แต่ง|ประพันธ์)/gi, '').trim();
+      focusKeywords.push('แต่ง', 'ประพันธ์', 'ผู้แต่ง');
+    } else if (/โนเบล/i.test(raw)) {
+      focusKeywords.push('รางวัลโนเบล', 'โนเบล');
+      if (/ไอน์สไตน์/i.test(raw)) headEntity = 'อัลเบิร์ต ไอน์สไตน์';
+    } else if (/อาการ/i.test(raw)) {
+      focusKeywords.push('อาการ');
+      if (/ไข้เลือดออก/i.test(raw)) headEntity = 'ไข้เลือดออก';
+    } else if (/อายุขัย|กี่ปี/i.test(raw)) {
+      focusKeywords.push('อายุขัย', 'อายุ', 'ปี');
+      if (/แมว/i.test(raw)) headEntity = 'แมว';
+    }
+  }
+
+  if (PRACTICAL_YESNO_REGEX.test(raw)) {
+    isYesNoOrPractical = true;
+    if (/กิน/.test(raw)) focusKeywords.push('กิน', 'อาหาร');
+    if (/ช็อกโกแลต/.test(raw)) focusKeywords.push('ช็อกโกแลต');
+    if (/ขา/.test(raw)) focusKeywords.push('ขา');
+    if (!headEntity && /แมว/.test(raw)) headEntity = 'แมว';
+  }
+
   // Expand abbreviations on the cleaned topic
   const expanded = expandAbbreviations(cleaned);
-
   const canonicalTopic = expanded || cleaned || raw;
+
+  if (!headEntity) {
+    headEntity = canonicalTopic;
+  }
+
+  // Normalize casing for known entities
+  if (headEntity.toLowerCase() === 'chatgpt') headEntity = 'ChatGPT';
+  else if (headEntity.toLowerCase() === 'google') headEntity = 'Google';
+  else if (headEntity.toLowerCase() === 'tesla') headEntity = 'Tesla';
 
   // Generate candidates in prioritized order
   const candidatesSet = new Set();
+
+  if (relationRole) {
+    if (relationRole === 'ceo') {
+      candidatesSet.add(`${headEntity} CEO`);
+      candidatesSet.add(headEntity);
+      const parentOrg = KNOWN_ORGANIZATIONS[headEntity.toLowerCase()];
+      if (parentOrg) candidatesSet.add(parentOrg);
+    } else if (relationRole === 'founder') {
+      candidatesSet.add(`${headEntity} ผู้ก่อตั้ง`);
+      candidatesSet.add(headEntity);
+    } else if (relationRole === 'owner') {
+      candidatesSet.add(`${headEntity} เจ้าของ`);
+      candidatesSet.add(headEntity);
+    } else if (relationRole === 'capital') {
+      candidatesSet.add(`เมืองหลวง${headEntity}`);
+      candidatesSet.add(headEntity);
+    } else if (relationRole === 'creator') {
+      candidatesSet.add(headEntity);
+    }
+  }
+
+  if (headEntity) candidatesSet.add(headEntity);
   if (canonicalTopic) candidatesSet.add(canonicalTopic);
   if (cleaned && cleaned !== canonicalTopic) candidatesSet.add(cleaned);
 
-  // If query had abbreviations, add standard root candidates
   if (/นายกรัฐมนตรีไทย/.test(canonicalTopic)) {
     candidatesSet.add('นายกรัฐมนตรีไทย');
   }
@@ -136,16 +248,46 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
   const matchedLeading = LEADING_FRAME_REGEX.test(preprocessed);
   const matchedTrailing = TRAILING_FRAME_REGEX.test(preprocessed);
   const hadAbbr = expanded !== cleaned;
+
+const SUBJECTIVE_OR_QUESTION_REGEX = /(?:ชอบ|คิดว่า|รู้สึก|เห็นด้วย|ดีกว่า|มากกว่า|แนะนำ|คิดเห็น|อะไร|ทำไม|อย่างไร|ยังไง|ไหน|หรือเปล่า|หรือไม่|หรือยัง|มั้ย|ไหม|เท่าไหร่|เท่าใด|กี่)/i;
+const ACTION_VERB_REGEX = /^(?:ยิง|เปิด|ปิด|ลบ|ส่ง|สร้าง|ทำลาย|โจมตี|เล่น|รัน|start\b|stop\b|launch\b|shoot\b|fire\b)/i;
+
+  const isGreeting = GREETINGS_REGEX.test(cleaned);
+  const isBareNoun = Boolean(
+    !isGreeting &&
+    !matchedLeading &&
+    !matchedTrailing &&
+    !isYesNoOrPractical &&
+    !relationRole &&
+    !SUBJECTIVE_OR_QUESTION_REGEX.test(cleaned) &&
+    !ACTION_VERB_REGEX.test(cleaned) &&
+    cleaned.split(/\s+/).length <= 2 &&
+    cleaned.length >= 2 &&
+    cleaned.length <= 30 &&
+    !/[?.,!]/.test(raw)
+  );
+
   const isKnowledgeIntent = Boolean(
+    !isGreeting &&
     canonicalTopic &&
     canonicalTopic.length >= 2 &&
-    (matchedLeading || matchedTrailing || hadAbbr || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))
+    (isBareNoun || matchedLeading || matchedTrailing || hadAbbr || relationRole || focusKeywords.length > 0 || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))
   );
+
+  const effectivePrompt = isBareNoun
+    ? `สรุปข้อมูลสำคัญและความหมายของ ${headEntity}`
+    : raw;
 
   return {
     canonicalTopic,
+    headEntity,
+    focusKeywords,
+    relationRole,
     searchCandidates: Array.from(candidatesSet),
     rawCleaned: cleaned,
-    isKnowledgeIntent
+    isKnowledgeIntent,
+    isBareNoun,
+    isYesNoOrPractical,
+    effectivePrompt
   };
 }

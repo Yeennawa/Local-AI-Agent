@@ -121,7 +121,8 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   const lower = raw.toLowerCase();
 
   // 1. Pure Greetings and Polite Chit-chat
-  const isGreeting = /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|hello(?:\s+there)?|hi(?:\s+there)?|hey|good\s+(?:morning|evening|afternoon)|สบายดีไหม|เป็นไงบ้าง|เป็นอย่างไรบ้าง|ขอบคุณ(?:มาก)?(?:นะ)?(?:ครับ|ค่ะ)?|thanks(?:\s+a\s+lot)?|thank\s+you|บาย(?:ครับ|ค่ะ|นะ)?|ลาก่อน(?:ครับ|ค่ะ|นะ)?|bye|goodbye)\s*$/i.test(raw);
+  const isGreeting = /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|hello(?:\s+there)?|hi(?:\s+there)?|hey|good\s+(?:morning|evening|afternoon)|สบายดีไหม|เป็นไงบ้าง|เป็นอย่างไรบ้าง|ขอบคุณ(?:มาก)?(?:นะ)?(?:ครับ|ค่ะ)?|thanks(?:\s+a\s+lot)?|thank\s+you|บาย(?:ครับ|ค่ะ|นะ)?|ลาก่อน(?:ครับ|ค่ะ|นะ)?|bye|goodbye)\s*$/i.test(raw) ||
+    /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล)\s*(?:แนะนำตัว|ช่วยแนะนำตัว|ทักทาย)/i.test(raw);
   if (isGreeting) {
     return { intent: 'finish', toolCall: null, confidence: 'high', reason: 'greeting_chat' };
   }
@@ -264,9 +265,11 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   // 7. Knowledge & Conceptual Questions (Wikipedia)
-  const isKnowledgeQuery = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
-  if (isKnowledgeQuery || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
-    const topic = extractTopic(raw, focusEntity);
+  const norm = normalizeQuery(raw, { focusEntity });
+  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
+
+  if (isKnowledgePattern || norm.isKnowledgeIntent || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
+    const topic = norm.canonicalTopic || extractTopic(raw, focusEntity) || raw;
     if (topic && topic.length >= 2) {
       return {
         intent: 'tool',
@@ -275,7 +278,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
           params: { topic }
         },
         confidence: 'high',
-        reason: 'knowledge_lookup'
+        reason: norm.isBareNoun ? 'bare_noun_knowledge' : 'knowledge_lookup'
       };
     }
   }

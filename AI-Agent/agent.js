@@ -24,20 +24,75 @@ Rules:
 - Never repeat a tool. Never invent a tool name.
 Reply with JSON only.`;
 
-const ANSWER_PROMPT = `You are Max, a short, helpful, and friendly assistant on a Raspberry Pi.
+const ANSWER_PROMPT = `You are Max, a short, precise, and friendly assistant on a Raspberry Pi.
 Respond in Thai when the user asks in Thai.
-State the answer directly from the tool results. Never repeat the user's question as the answer.
-If tool results are provided, extract and summarize the answer clearly. Never invent facts, news, dates, or abilities. If no information is found at all, state that politely.
+State the answer directly and faithfully from the provided tool results or references. Never repeat the user's question as the answer.
+If reference data is provided, base your answer strictly on the facts, names, and numbers in the reference. Never invent facts, news, dates, or abilities. If no information is found at all, state that politely.
 Keep your response natural, helpful, and concise (within 2-3 sentences).`;
 
 function clip(text, max) {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+export function sanitizeAnswerText(text, userMessage = '', defaultSummary = '') {
+  if (typeof text !== 'string') return '';
+  let cleaned = text.trim();
+
+  // 1. If model echoed the user's question or bare noun verbatim (e.g. asked "แมว" answered "แมว")
+  if (userMessage && cleaned.toLowerCase() === userMessage.trim().toLowerCase()) {
+    return defaultSummary || cleaned;
+  }
+
+  // 2. Remove consecutive duplicate sentences or clauses
+  const rawParts = cleaned.split(/(?<=[.!?\n])\s+|\s+/);
+  const deduped = [];
+  for (let i = 0; i < rawParts.length; i++) {
+    const part = rawParts[i].trim();
+    if (!part) continue;
+    if (i === 0 || part !== rawParts[i - 1].trim()) {
+      deduped.push(part);
+    }
+  }
+  cleaned = deduped.join(' ');
+
+  // 3. Trim dangling incomplete sentence if clipped at token boundary
+  if (cleaned.length > 50 && !/[.!?।ฯ\n]$/.test(cleaned)) {
+    const lastPunct = Math.max(
+      cleaned.lastIndexOf('. '),
+      cleaned.lastIndexOf('.\n'),
+      cleaned.lastIndexOf('! '),
+      cleaned.lastIndexOf('? '),
+      cleaned.lastIndexOf('\n')
+    );
+    if (lastPunct > 0 && lastPunct >= cleaned.length * 0.5) {
+      cleaned = cleaned.slice(0, lastPunct + 1).trim();
+    }
+  }
+
+  return cleaned;
+}
+
 function describeOutcome(execResult) {
-  const body = execResult.success
-    ? clip(JSON.stringify(execResult.result), MAX_OBSERVATION_CHARS)
-    : `failed: ${execResult.error}`;
+  if (!execResult.success) {
+    return `${execResult.tool}: failed: ${execResult.error}`;
+  }
+
+  const res = execResult.result;
+  if (execResult.tool === 'search_wikipedia' && res?.found && res?.summary) {
+    return `[ข้อมูลอ้างอิงจาก Wikipedia เรื่อง "${res.title || ''}"]: ${res.summary}`;
+  }
+  if (execResult.tool === 'get_weather' && res?.temperatureC !== undefined) {
+    return `[ข้อมูลสภาพอากาศ ${res.location || ''}]: อุณหภูมิ ${res.temperatureC}°C ความชื้น ${res.humidityPercent}% สภาพอากาศ ${res.condition || ''}`;
+  }
+  if (execResult.tool === 'get_fx' && res?.converted !== undefined) {
+    return `[ข้อมูลอัตราแลกเปลี่ยน]: ${res.amount} ${res.base} = ${res.converted} ${res.target} (อัตรา 1 ${res.base} = ${res.rate} ${res.target})`;
+  }
+  if (execResult.tool === 'get_news' && Array.isArray(res?.items)) {
+    const headlines = res.items.slice(0, 3).map((item, idx) => `${idx + 1}. ${typeof item === 'object' ? item.title : item}`).join('\n');
+    return `[ข่าวจาก ${res.source || 'สื่อมวลชน'}]:\n${headlines}`;
+  }
+
+  const body = clip(JSON.stringify(res), MAX_OBSERVATION_CHARS);
   return `${execResult.tool}: ${body}`;
 }
 
@@ -81,25 +136,43 @@ async function synthesizeAnswer({ model, chatFn, history, message, observations,
     model,
     chatFn,
     messages,
-    temperature: 0.3,
+    temperature: observations.length ? 0.1 : 0.3,
     numPredict: ANSWER_TOKENS,
     returnDetails: true,
     onToken
   });
 }
 
-function resolveToolCall(decision) {
+function resolveToolCall(decision, message = '') {
   if (!decision || typeof decision !== 'object') return null;
+  let name = null;
+  let params = {};
+
   if (decision.action === 'call_tool' && decision.tool) {
-    return { name: decision.tool, params: decision.params || {} };
+    name = decision.tool;
+    params = decision.params || {};
+  } else if (decision.tool && toolRegistry.hasTool(decision.tool)) {
+    name = decision.tool;
+    params = decision.params || {};
+  } else if (decision.action && toolRegistry.hasTool(decision.action)) {
+    name = decision.action;
+    params = decision.params || {};
   }
-  if (decision.tool && toolRegistry.hasTool(decision.tool)) {
-    return { name: decision.tool, params: decision.params || {} };
+
+  if (!name) return null;
+
+  // Guard against hallucinated tools in general knowledge queries
+  if (name === 'get_current_time' && !/(?:เวลา|โมง|วันที่|กี่โมง|time|date)/i.test(message)) {
+    return null;
   }
-  if (decision.action && toolRegistry.hasTool(decision.action)) {
-    return { name: decision.action, params: decision.params || {} };
+  if (name === 'get_system_info' && !/(?:cpu|ram|memory|แรม|ฮาร์ดแวร์|สถานะเครื่อง|system)/i.test(message)) {
+    return null;
   }
-  return null;
+  if (name === 'calculate' && !/\d/.test(message)) {
+    return null;
+  }
+
+  return { name, params };
 }
 
 export async function runAgent({ message, conversationHistory = [], sessionId = null, options = {} }) {
@@ -198,7 +271,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       // Fallback: ReAct loop for ambiguous requests or when useRouter is disabled
       for (let step = 0; step < MAX_LOOP_GUARD; step++) {
         const decision = await decideNextStep(ctx);
-        const toolCall = resolveToolCall(decision);
+        const toolCall = resolveToolCall(decision, message);
         if (!toolCall) break;
 
         const name = toolCall.name;
@@ -219,9 +292,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         if (!untried) break;
       }
 
-      // Fallback: If no tools were invoked by decision, but query has clear knowledge intent,
+      // Fallback: If no tools were invoked and no tool attempts were made, but query has clear knowledge intent,
       // attempt a single fallback retrieval with search_wikipedia before giving up to synthesis.
-      if (toolsUsed.length === 0 && toolRegistry.hasTool('search_wikipedia')) {
+      if (observations.length === 0 && toolsUsed.length === 0 && toolRegistry.hasTool('search_wikipedia')) {
         const norm = normalizeQuery(message, { focusEntity });
         if (norm.isKnowledgeIntent && norm.canonicalTopic) {
           onStatus?.({ status: 'using_tool', tool: 'search_wikipedia', params: { topic: norm.canonicalTopic } });
@@ -245,7 +318,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       ? parsed.text.trim()
       : extractIncompleteText(raw).trim();
 
-    const finalText = candidateText ? clip(candidateText, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
+    const wikiSummary = toolsUsed.find((t) => t.tool === 'search_wikipedia')?.result?.summary || '';
+    const cleanedText = sanitizeAnswerText(candidateText, message, wikiSummary);
+    const finalText = cleanedText ? clip(cleanedText, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
 
     // Record turn in session memory if sessionId was provided
