@@ -6,6 +6,4 @@ node_modules/
 Thumbs.db
 
 # Ignored from Git for group repository
-docs/
 tests/
-.agents/

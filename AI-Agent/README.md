@@ -1,186 +1,157 @@
 # AI Agent Module (Raspberry Pi 5)
 
-โมดูลนี้เป็นส่วนประมวลผล AI Agent สำหรับโปรเจกต์ Local-AI-Agent ทำหน้าที่รับข้อความจาก Backend, วิเคราะห์คำสั่ง, ตัดสินใจเรียกใช้ Tool (ReAct pattern), และส่งคืนผลลัพธ์พร้อมค่าอารมณ์ (feeling) กลับไปให้ Frontend ใช้แสดงผลบน Avatar
+โมดูลนี้เป็นส่วนประมวลผล AI Agent สำหรับโปรเจกต์ Local-AI-Agent ทำหน้าที่รับข้อความจาก Backend หรือ Web Client, วิเคราะห์คำสั่ง, ตัดสินใจเรียกใช้ Tool (ReAct pattern), และส่งคืนผลลัพธ์พร้อมค่าอารมณ์ (feeling) กลับไปให้ Frontend ใช้แสดงผลบน Avatar
 
-โมดูลนี้ออกแบบให้ทำงานเป็นอิสระ (Deep Module) โดยเชื่อมต่อกับ Ollama ในเครื่อง และควบคุมปริมาณ Token กับการใช้หน่วยความจำเพื่อให้ทำงานบน Raspberry Pi 5 (RAM 4GB) ได้อย่างเสถียร
+โมดูลนี้ออกแบบให้ทำงานเป็นอิสระ (Deep Module) โดยเชื่อมต่อกับ Ollama ในเครื่อง และควบคุมปริมาณ Token กับการใช้หน่วยความจำเพื่อให้ทำงานบน Raspberry Pi 5 (RAM 4GB) ได้อย่างเสถียร 100% ปราศจากอาการหน่วยความจำล้น (OOM) และปกป้อง MicroSD Card จากการสึกหรอ (Zero Disk Writes)
 
 ---
 
-## 1. โครงสร้างไฟล์
+## 1. โครงสร้างไฟล์ในโมดูล
 
 ```text
 AI-Agent/
-├── index.js          Entry point หลักสำหรับให้ Backend เรียกใช้งาน
-├── agent.js          ตัวควบคุม ReAct loop, loop guard, และการสรุปผลลัพธ์
-├── ollamaClient.js   ตัวเชื่อมต่อ Ollama API (stream, timeout ที่ยกเลิก request จริง, keep-alive)
-├── parse.js          ฟังก์ชันอ่าน JSON จากโมเดล, ตรวจ feeling และล้างประวัติแชต
+├── index.js          Entry point หลัก (Deep Module seam ส่งออกฟังก์ชัน runAgent)
+├── agent.js          ตัวควบคุม ReAct loop, loop guard, faithful synthesis และ prompt templates
+├── router.js         ระบบคัดกรองเจตนา 2 ขั้น (Intent Router) คัดแยกงาน Tool โดยไม่ต้องพึ่งพา LLM
+├── normalizer.js     ระบบปรับสภาพข้อความภาษาไทย (Thai Query Normalizer) ถอดคำย่อและขยายคีย์เวิร์ด
+├── memory.js         ระบบความจำเซสชันในหน่วยความจำ (In-memory Session Memory) รองรับ 10 Turns
+├── queue.js          ระบบคิวคำขอแบบเข้าก่อน-ออกก่อน (FIFO RequestQueue) ควบคุมการรันบน Pi 5
+├── server.js         Express Server ให้บริการ API (/api/chat, /api/chat/stream, /api/health)
+├── ollamaClient.js   ตัวเชื่อมต่อ Ollama API (stream, abort controller, keep-alive 2m)
+├── parse.js          ฟังก์ชันอ่าน JSON จากโมเดล, ตรวจสอบ feeling และล้างประวัติแชต (sliding window)
 ├── cli.js            สคริปต์สำหรับทดสอบรันคำถามผ่าน Terminal
 ├── README.md         เอกสารฉบับนี้
-└── tools/            โฟลเดอร์เก็บฟังก์ชันเครื่องมือ
-    ├── registry.js   ระบบลงทะเบียนและตรวจสอบสิทธิ์ของ Tool
-    ├── systemInfo.js ฟังก์ชันอ่านสถานะเครื่องและแรม (get_system_info)
-    └── time.js       ฟังก์ชันอ่านเวลาและวันที่ (get_current_time)
+└── tools/            โฟลเดอร์เก็บฟังก์ชันเครื่องมือ (Deterministic Tools ทั้ง 8 ตัว)
+    ├── registry.js   ระบบลงทะเบียน ตรวจสอบสิทธิ์ และคุม Timeout (5 วินาที) ของ Tool
+    ├── systemInfo.js เครื่องมืออ่านสถานะเครื่องและแรม (get_system_info)
+    ├── time.js       เครื่องมืออ่านเวลาและวันที่ปัจจุบัน (get_current_time)
+    ├── calculator.js เครื่องมือคำนวณคณิตศาสตร์ปลอดภัย (calculate)
+    ├── github.js     เครื่องมือค้นหาคลังโค้ดและผู้ใช้ GitHub (search_github)
+    ├── wiki.js       เครื่องมือค้นหา Wikipedia พร้อมกลยุทธ์ 5 ชั้นและ Deep Passage Retrieval (search_wikipedia)
+    ├── news.js       เครื่องมือดึงข่าวสารล่าสุดจาก Google News RSS (get_news)
+    ├── feedParser.js โมดูลช่วยแปลงข้อมูล RSS Feed สำหรับข่าว
+    ├── weather.js    เครื่องมือตรวจสอบสภาพอากาศและอุณหภูมิ Real-time (get_weather)
+    └── fx.js         เครื่องมือตรวจสอบและคำนวณอัตราแลกเปลี่ยนเงินตราสากล (get_fx)
 ```
 
 ---
 
-## 2. ข้อตกลงการแก้ไขโค้ดสำหรับสมาชิกในทีม
+## 2. เครื่องมือที่รองรับในระบบ (Built-in Deterministic Tools)
 
-เพื่อให้ระบบทำงานร่วมกันได้โดยไม่เกิดข้อผิดพลาดหรือทำให้บอร์ดค้าง รบกวนปฏิบัติตามแนวทางนี้ครับ:
+ระบบมีเครื่องมือประมวลผลที่แม่นยำ 8 ตัว ทำงานแบบ Deterministic โดยไม่พึ่งพาการสุ่มของโมเดล:
 
-### ไฟล์ที่เรียกใช้งานหรือแก้ไขเพิ่มเติมได้
-
-1. `AI-Agent/index.js`:
-   - ฝั่ง Backend สามารถ import ฟังก์ชัน `runAgent` ไปใช้งานใน Express หรือ API route ได้ทันที
-2. `AI-Agent/tools/`:
-   - สมาชิกในทีมสามารถเพิ่ม Tool ใหม่ได้ตามต้องการ (เช่น อ่านเซนเซอร์ หรือควบคุมอุปกรณ์) โดยเขียนตามรูปแบบในหัวข้อด้านล่าง
-3. `AI-Agent/cli.js`:
-   - ใช้พิมพ์ทดสอบคุยกับ Agent ใน Terminal ได้ตามสะดวก
-
-### ไฟล์ที่ไม่ควรแก้ไข
-
-1. `AI-Agent/agent.js`:
-   - มี ReAct loop, loop guard (จำกัดไม่เกิน 3 รอบ), และระบบตัดประวัติแชตเก่า (Sliding window) เพื่อคุมปริมาณ Token และป้องกันบอร์ดแรมเต็ม
-2. `AI-Agent/ollamaClient.js`:
-   - มีการตั้งค่า timeout (25 วินาที) ที่ยกเลิก request ไปยัง Ollama จริงเมื่อหมดเวลา, keep-alive (2 นาที), และตั้ง `num_ctx` 1536 กับ `num_thread` 3 ให้เหมาะกับ Pi 5 (ปรับได้ด้วย env `OLLAMA_NUM_CTX` และ `OLLAMA_NUM_THREAD` เท่านั้น ไม่ต้องแก้โค้ด)
-3. `AI-Agent/parse.js`:
-   - ด่านตรวจผลลัพธ์จากโมเดลก่อนใช้งานจริง ทั้ง JSON, ค่า feeling และประวัติแชตที่ Backend ส่งมา
-4. `AI-Agent/tools/registry.js`:
-   - มี whitelist ชื่อ Tool, ตรวจชนิดของ parameter และตัด Tool ที่ค้างเกิน 5 วินาที โดยไม่ throw error ออกมา
+1. `get_system_info`: อ่านค่าสถานะฮาร์ดแวร์ของ Raspberry Pi 5 (RAM รวม, RAM เหลือ, CPU Usage, อุณหภูมิ, Uptime)
+2. `get_current_time`: ตรวจสอบวันและเวลาปัจจุบัน รองรับการระบุ Timezone (ค่าเริ่มต้น: `Asia/Bangkok`)
+3. `calculate`: คำนวณนิพจน์คณิตศาสตร์อย่างแม่นยำ ปราศจากการใช้ `eval()` โดยรองรับทั้งเลขฐานสิบ ทศนิยม และฟังก์ชันตรีโกณมิติพื้นฐาน
+4. `search_wikipedia`: ค้นหาข้อมูลเชิงลึกจาก Wikipedia ภาษาไทยและอังกฤษ พร้อมระบบข้าม Disambiguation, ตรวจสอบ Semantic Relevance, และดึง Passage ที่ตรงกับประเด็นคำถาม
+5. `get_news`: ดึงข่าวเด่นล่าสุดจาก Google News RSS ภาษาไทย รองรับการกรองตามหมวดหมู่ (`technology`, `business`, `world`, `general`)
+6. `get_weather`: ตรวจสอบสภาพอากาศ อุณหภูมิ ความชื้น และความเร็วลมแบบ Real-time จาก Open-Meteo API
+7. `get_fx`: คำนวณและแปลงอัตราแลกเปลี่ยนเงินตราต่างประเทศล่าสุด (เช่น USD, JPY, EUR เป็น THB)
+8. `search_github`: ค้นหา Repository ยอดนิยม ข้อมูลเจ้าของโปรเจกต์ จำนวนดาว และภาษาที่ใช้บน GitHub
 
 ---
 
-## 3. คู่มือการติดตั้งและรันบน Raspberry Pi 5
+## 3. สถาปัตยกรรมความปลอดภัยและการปกป้องฮาร์ดแวร์ (Pi 5 Protection)
 
-เมื่อนำโค้ดไปรันบน Raspberry Pi 5 (Raspberry Pi OS 64-bit) ให้ทำตามขั้นตอนดังนี้:
+1. **FIFO Concurrency Control (`queue.js`)**:
+   - ป้องกันการเกิด Out of Memory (OOM) โดยจำกัดให้ Ollama รันการอนุมาน (Inference) ได้ทีละ 1 Request เท่านั้น
+   - รองรับคิวรอสูงสุด 10 คำขอ หากเกินจะตอบกลับด้วย HTTP 503 (`Server busy: Queue is full`) ทันทีโดยระบบไม่ล่ม
+2. **Zero Disk Writes (`memory.js`)**:
+   - ประวัติการสนทนาต่อเนื่อง (Multi-turn Context สูงสุด 10 รอบ) และ Focus Entity จัดเก็บใน RAM ผ่านโครงสร้างข้อมูล JavaScript Map ทั้งหมด
+   - ไม่มีการเขียนบันทึกไฟล์ชั่วคราวลงใน MicroSD Card เพื่อยืดอายุการใช้งาน Flash Memory ของบอร์ด
+3. **Intent Router & Normalizer (`router.js` & `normalizer.js`)**:
+   - แปลงคำย่อภาษาไทย เช่น "นายก", "กทม", "จนท" ให้เป็นคำเต็ม
+   - คัดกรองเจตนาของผู้ใช้ไปยัง Tool ที่เหมาะสมด้วย Deterministic Rules 100% ทำให้ลดเวลาและ Token ในรอบตัดสินใจของโมเดลได้อย่างสิ้นเชิง
+4. **Token & Memory Optimization (`ollamaClient.js` & `agent.js`)**:
+   - กำหนด `num_ctx: 1536` และ `num_thread: 3` เพื่อสงวน 1 CPU Core สำหรับ Node.js Event Loop
+   - ใช้ `keep_alive: "2m"` ป้องกันการโหลดโมเดลเข้าออก RAM บ่อยครั้ง
+   - กำหนด Sliding Window เก็บเฉพาะบทสนทนา 4 ข้อความล่าสุด (2 Turns) และจำกัดขนาดของข้อความไม่ให้บวม
 
-### ขั้นตอนที่ 1: ติดตั้ง Ollama (ระดับ OS - ทำครั้งเดียว)
+---
 
-เปิด Terminal บน Raspberry Pi 5 แล้วรันคำสั่ง:
+## 4. คู่มือการติดตั้งและเปิดใช้งาน
+
+### ติดตั้ง Ollama และดาวน์โหลดโมเดล (ทำครั้งเดียว):
 
 ```bash
+# ติดตั้ง Ollama
 curl -fsSL https://ollama.com/install.sh | sh
-```
 
-หากต้องการให้เครื่องอื่นในวงแลนยิงเข้ามาหา Ollama บน Pi ได้ ให้เปิดอนุญาต network:
-
-```bash
-sudo systemctl edit ollama.service
-```
-
-เพิ่มข้อความ:
-
-```ini
-[Service]
-Environment="OLLAMA_HOST=0.0.0.0"
-```
-
-แล้วรีสตาร์ต service:
-
-```bash
-sudo systemctl daemon-reload && sudo systemctl restart ollama
-```
-
-### ขั้นตอนที่ 2: ดาวน์โหลดโมเดล
-
-ดาวน์โหลดโมเดล qwen2.5:1.5b (ขนาดประมาณ 986 MB ใช้แรมประมาณ 1.2GB เหมาะกับ Pi 5):
-
-```bash
+# ดึงโมเดล qwen2.5:1.5b (ขนาดประมาณ 986 MB)
 ollama pull qwen2.5:1.5b
 ```
 
-### ขั้นตอนที่ 3: ติดตั้ง Node.js Dependencies
+### ติดตั้ง Dependencies และเปิดใช้งาน:
 
 ```bash
-git clone https://github.com/Yeennawa/Local-AI-Agent.git
-cd Local-AI-Agent
+# ติดตั้งแพ็กเกจ Node.js
 npm install
+
+# รันเซิร์ฟเวอร์แบบ Full-stack (ให้บริการทั้ง API และหน้าเว็บ Frontend บนพอร์ต 3000)
+npm start
+
+# หรือรันเฉพาะ Express Server
+node AI-Agent/server.js
 ```
 
-### ขั้นตอนที่ 4: ทดสอบการทำงาน
+### การทดสอบระบบ:
 
 ```bash
-# รันชุดทดสอบอัตโนมัติ
+# รันชุดทดสอบ Unit และ Integration Tests ทั้งหมด (205 tests)
 npm test
 
-# หรือทดสอบผ่าน CLI
-node AI-Agent/cli.js "เครื่องสถานะเป็นยังไงบ้าง แรมเหลือเท่าไหร่"
+# รันชุดทดสอบประเมินผลคุณภาพและความแม่นยำของ Intent Router (60/60 tests)
+node tests/eval/runner.js
+
+# ทดสอบคุยกับ Agent ผ่าน Terminal โดยตรง
+node AI-Agent/cli.js "นายกไทยคนปัจจุบันคือใคร"
 ```
 
 ---
 
-## 4. ตัวอย่างการเชื่อมต่อสำหรับฝั่ง Backend
+## 5. การเชื่อมต่อ API สำหรับนักพัฒนา (API Contract)
 
-ฝั่ง Backend สามารถเรียกใช้ฟังก์ชัน `runAgent` ได้ดังนี้:
-
-```javascript
-import { runAgent } from './AI-Agent/index.js';
-
-app.post('/api/chat', async (req, res) => {
-  const { message, conversationHistory } = req.body;
-
-  const result = await runAgent({
-    message,
-    conversationHistory: conversationHistory || []
-  });
-
-  res.json(result);
-});
+### 1. HTTP Endpoint ทั่วไป (`POST /api/chat`)
+ส่งข้อความคำถาม และรับคำตอบ JSON แบบรอบเดียว:
+```bash
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "ตอนนี้เวลาเท่าไหร่แล้ว", "sessionId": "session-001"}'
 ```
 
-### รูปแบบข้อมูลที่ส่งกลับ (AgentResponse)
-
+ตัวอย่าง Response:
 ```json
 {
-  "text": "ขณะนี้เครื่อง Raspberry Pi 5 มีแรมเหลือ 2,150 MB จาก 4,096 MB ครับ",
+  "text": "ขณะนี้เวลา 14:30 น. ของวันเสาร์ที่ 18 ตุลาคม 2569 ครับ",
   "status": "idle",
   "feeling": "happy",
   "toolsUsed": [
     {
-      "tool": "get_system_info",
-      "params": {},
-      "result": { "freeMemoryMB": 2150, "memoryUsagePercent": 47.5 },
-      "durationMs": 2
+      "tool": "get_current_time",
+      "params": { "timezone": "Asia/Bangkok" },
+      "result": { "formatted": "14:30:00", "date": "2026-10-18" },
+      "durationMs": 1
     }
   ],
+  "sessionId": "session-001",
   "error": null
 }
 ```
 
-- ค่า `feeling` มี: `happy`, `neutral`, `surprised`, `confused`, `proud` สำหรับนำไปสลับรูปหน้า Avatar
-- ค่า `status` มี: `idle`, `using_tool`, `error` สำหรับแสดงสถานะการทำงาน
-
----
-
-## 5. วิธีเพิ่ม Tool ใหม่
-
-หากต้องการเพิ่ม Tool ใหม่ (เช่น อ่านเซนเซอร์):
-
-1. สร้างไฟล์ใน `AI-Agent/tools/<toolName>.js`:
-
-```javascript
-export const sensorTool = {
-  name: 'read_sensor',
-  description: 'อ่านค่าอุณหภูมิและความชื้นจากเซนเซอร์',
-  parameters: {
-    type: 'object',
-    properties: {},
-    required: []
-  },
-  dangerous: false,
-  async execute() {
-    return { temperature: 28.5, humidity: 65 };
-  }
-};
+### 2. Server-Sent Events Streaming (`POST /api/chat/stream`)
+รับคำตอบแบบ Real-time ทีละ Token สำหรับหน้าจอแชตที่ต้องการให้ข้อความทยอยพิมพ์:
+```bash
+curl -N -X POST http://localhost:3000/api/chat/stream \
+  -H "Content-Type: application/json" \
+  -d '{"message": "เล่าประวัติความเป็นมาของคอมพิวเตอร์สั้นๆ", "sessionId": "session-001"}'
 ```
+Event ที่ส่งออกมา:
+- `event: status`: ส่งสถานะการทำงานปัจจุบัน (`using_tool`, `synthesizing`)
+- `event: token`: ส่งชิ้นส่วนข้อความ `{ "token": "คอมพิวเตอร์" }`
+- `event: done`: ส่งโครงสร้าง `AgentResponse` ฉบับเต็มเมื่อการสังเคราะห์เสร็จสิ้น
 
-2. ลงทะเบียนใน `AI-Agent/tools/registry.js`:
-
-```javascript
-import { sensorTool } from './sensor.js';
-
-// ใน constructor:
-this.registerTool(sensorTool);
+### 3. Health & Telemetry Endpoint (`GET /api/health`)
+ตรวจสอบข้อมูลสถานะฮาร์ดแวร์ คิวงาน และหน่วยความจำของบอร์ด Raspberry Pi 5:
+```bash
+curl http://localhost:3000/api/health
 ```
-
-3. รัน `npm test` เพื่อตรวจสอบความถูกต้อง ระบบจะตรวจพบ Tool ใหม่และให้ AI เลือกใช้งานได้ทันที
