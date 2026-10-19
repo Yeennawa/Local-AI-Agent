@@ -1,17 +1,186 @@
-// Session Memory (Deep Module)
+// Session Memory & Note Memory Ledger (Deep Module)
 // In-memory 10-turn conversation ledger with focus entity tracking,
-// zero-token meta-recall, and budgeted context assembly.
-// Designed for Raspberry Pi 5 to keep RAM overhead minimal (~3KB/session)
-// without causing I/O wear on the MicroSD card.
+// zero-token meta-recall, QA Note Memory Ledger (save_note / recall_notes),
+// and budgeted context assembly.
+// Designed for Raspberry Pi 5 to keep RAM overhead minimal (<100KB)
+// without causing I/O wear on the MicroSD card (0 Disk Writes).
+
+import { computeThaiBigramContainment, normalizeColloquialThai } from './normalizer.js';
 
 const DEFAULT_MAX_TURNS = 10;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DEFAULT_MAX_NOTES = 200;
+
+export class NoteMemoryLedger {
+  constructor({ maxNotes = DEFAULT_MAX_NOTES, defaultTtlMs = DEFAULT_TTL_MS } = {}) {
+    this.maxNotes = maxNotes;
+    this.defaultTtlMs = defaultTtlMs;
+    this.notes = new Map();
+  }
+
+  saveNote({
+    sessionId = 'global',
+    query,
+    answer,
+    topic = null,
+    sourceTool = null,
+    polarity = 'neutral',
+    ttlMs = null
+  }) {
+    if (!query || !answer) return null;
+    const cleanQuery = normalizeColloquialThai(query).trim();
+    const canonicalKey = cleanQuery.toLowerCase().replace(/[\s.,?!ฯจ้ะครับค่ะนะ]+/g, '');
+
+    if (!canonicalKey) return null;
+
+    // LRU eviction if capacity reached
+    if (this.notes.size >= this.maxNotes) {
+      const oldestKey = this.notes.keys().next().value;
+      this.notes.delete(oldestKey);
+    }
+
+    const duration = typeof ttlMs === 'number' ? ttlMs : this.defaultTtlMs;
+    const note = {
+      id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      sessionId: sessionId || 'global',
+      canonicalKey,
+      rawQuery: query.trim(),
+      answer: answer.trim(),
+      topic: topic ? topic.trim() : null,
+      sourceTool: sourceTool || null,
+      polarity,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + duration
+    };
+
+    this.notes.set(note.id, note);
+    return note;
+  }
+
+  recallNote(query, sessionId = null) {
+    if (!query || typeof query !== 'string') return null;
+    const now = Date.now();
+    const cleanQuery = normalizeColloquialThai(query).trim();
+    const searchKey = cleanQuery.toLowerCase().replace(/[\s.,?!ฯจ้ะครับค่ะนะ]+/g, '');
+
+    if (!searchKey) return null;
+
+    const stripQuestionModal = (str) => str
+      .replace(/(?:กินได้ไหม|กินได้หรือเปล่า|กินได้ป่าว|กินได้มั้ย|ได้ไหม|ได้มั้ย|ได้หรือเปล่า|ได้ป่าว|ได้ป่ะ|คืออะไร|คือใคร|มีอะไร|อยู่ที่ไหน|ไหม|มั้ย|หรือเปล่า|ป่าว|ครับ|ค่ะ|นะ|จ๊ะ|จ้า)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const queryCore = stripQuestionModal(cleanQuery).toLowerCase();
+
+    let bestMatch = null;
+    let highestSim = 0;
+
+    for (const [id, note] of this.notes.entries()) {
+      // Clean up expired notes
+      if (now > note.expiresAt) {
+        this.notes.delete(id);
+        continue;
+      }
+
+      // Check session compatibility: match if same sessionId, or note is global, or sessionId omitted
+      if (sessionId && note.sessionId !== 'global' && note.sessionId !== sessionId) {
+        continue;
+      }
+
+      // Tier 1: Exact canonical key match
+      if (note.canonicalKey === searchKey) {
+        return note;
+      }
+
+      // Subject contradiction guard: if note has topic and searchKey mentions another major subject
+      if (note.topic) {
+        const topicLower = note.topic.toLowerCase();
+        // If note is about cat and query is about dog
+        if (topicLower.includes('แมว') && searchKey.includes('หมา')) continue;
+        if (topicLower.includes('หมา') && searchKey.includes('แมว')) continue;
+        if (!searchKey.includes(topicLower) && !note.canonicalKey.includes(searchKey)) {
+          // If query doesn't share topic, skip fuzzy match
+          continue;
+        }
+      }
+
+      // Tier 2: Check core content words containment
+      const noteCore = stripQuestionModal(note.rawQuery).toLowerCase();
+      const noteTokens = noteCore.split(/\s+/).filter((t) => t.length >= 2);
+      const queryTokens = queryCore.split(/\s+/).filter((t) => t.length >= 2);
+
+      // If both contain core topic keywords (e.g. "ช็อกโกแลต" and "แมว" and "กิน")
+      if (noteTokens.length > 0 && queryTokens.length > 0) {
+        const matches = noteTokens.filter((nt) => queryCore.includes(nt)).length;
+        const overlap = matches / noteTokens.length;
+        if (overlap >= 0.75) {
+          return note;
+        }
+      }
+
+      // Also check Thai bigram similarity on searchKey and note.canonicalKey
+      const sim = Math.max(
+        computeThaiBigramContainment(searchKey, note.canonicalKey),
+        computeThaiBigramContainment(note.canonicalKey, searchKey)
+      );
+      if (sim >= 0.70 && sim > highestSim) {
+        highestSim = sim;
+        bestMatch = note;
+      }
+    }
+
+    return bestMatch;
+  }
+
+
+  getRelevantNotesForTopic(topic, sessionId = null, maxNotes = 2) {
+    if (!topic || typeof topic !== 'string') return [];
+    const now = Date.now();
+    const target = topic.trim().toLowerCase();
+    const results = [];
+
+    for (const [id, note] of this.notes.entries()) {
+      if (now > note.expiresAt) {
+        this.notes.delete(id);
+        continue;
+      }
+
+      if (sessionId && note.sessionId !== 'global' && note.sessionId !== sessionId) {
+        continue;
+      }
+
+      if (note.topic && (note.topic.toLowerCase().includes(target) || target.includes(note.topic.toLowerCase()))) {
+        results.push(note);
+        if (results.length >= maxNotes) break;
+      }
+    }
+
+    return results;
+  }
+
+  clearNotes(sessionId = null) {
+    if (!sessionId) {
+      this.notes.clear();
+      return;
+    }
+    for (const [id, note] of this.notes.entries()) {
+      if (note.sessionId === sessionId) {
+        this.notes.delete(id);
+      }
+    }
+  }
+
+  get noteCount() {
+    return this.notes.size;
+  }
+}
 
 export class SessionMemory {
-  constructor({ maxTurns = DEFAULT_MAX_TURNS, ttlMs = DEFAULT_TTL_MS } = {}) {
+  constructor({ maxTurns = DEFAULT_MAX_TURNS, ttlMs = DEFAULT_TTL_MS, maxNotes = DEFAULT_MAX_NOTES } = {}) {
     this.maxTurns = maxTurns;
     this.ttlMs = ttlMs;
     this.sessions = new Map();
+    this.noteLedger = new NoteMemoryLedger({ maxNotes, defaultTtlMs: ttlMs });
   }
 
   _getOrCreateSession(sessionId) {
@@ -151,6 +320,9 @@ export class SessionMemory {
   }
 
   clearSession(sessionId) {
+    if (sessionId) {
+      this.noteLedger.clearNotes(sessionId);
+    }
     return this.sessions.delete(sessionId);
   }
 

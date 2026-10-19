@@ -5,6 +5,7 @@ import { routeIntent, extractTopic } from './router.js';
 import { normalizeQuery } from './normalizer.js';
 import { sessionMemory } from './memory.js';
 import { buildDirectReply } from './replies.js';
+import { getThaiJoke, explainSlangOrMeme } from './culture.js';
 
 const MAX_LOOP_GUARD = 3;
 // tool output goes back into a 1536 token window, so it can't be unbounded
@@ -41,6 +42,17 @@ export function sanitizeAnswerText(text, userMessage = '', defaultSummary = '') 
   // 1. If model echoed the user's question or bare noun verbatim (e.g. asked "แมว" answered "แมว")
   if (userMessage && cleaned.toLowerCase() === userMessage.trim().toLowerCase()) {
     return defaultSummary || cleaned;
+  }
+
+  // 1b. Polarity & Warning Guard:
+  // If the reference summary contains strong danger/toxicity/prohibition warnings,
+  // ensure the answer does not contradict it or omit the critical warning.
+  if (defaultSummary && /(?:อันตราย|เป็นพิษ|ห้าม(?:ให้|รับประทาน|กิน)|ไม่ควร(?:ให้|กิน)|ผิดกฎหมาย|ทำให้เสียชีวิต|ตายได้)/.test(defaultSummary)) {
+    const mentionsWarning = /(?:อันตราย|พิษ|ห้าม|ไม่ควร|ไม่ได้|ตาย|เสียชีวิต|ผิดกฎหมาย)/.test(cleaned);
+    const falselyPositive = /(?:กินได้|ปลอดภัย|ไม่มีปัญหา|ทานได้)/.test(cleaned) && !/(?:ห้าม|ไม่ควร|ไม่ได้)/.test(cleaned);
+    if (!mentionsWarning || falselyPositive) {
+      return defaultSummary;
+    }
   }
 
   // 2. Remove consecutive duplicate sentences or clauses
@@ -81,9 +93,13 @@ function describeOutcome(execResult) {
   if (execResult.tool === 'search_wikipedia' && res?.found && res?.summary) {
     return `[ข้อมูลอ้างอิงจาก Wikipedia เรื่อง "${res.title || ''}"]: ${res.summary}`;
   }
+  if (execResult.tool === 'search_web' && res?.found && res?.summary) {
+    return `[ข้อมูลอ้างอิงจากเว็บ]: ${res.summary}`;
+  }
   if (execResult.tool === 'get_weather' && res?.temperatureC !== undefined) {
     return `[ข้อมูลสภาพอากาศ ${res.location || ''}]: อุณหภูมิ ${res.temperatureC}°C ความชื้น ${res.humidityPercent}% สภาพอากาศ ${res.condition || ''}`;
   }
+
   if (execResult.tool === 'get_fx' && res?.converted !== undefined) {
     return `[ข้อมูลอัตราแลกเปลี่ยน]: ${res.amount} ${res.base} = ${res.converted} ${res.target} (อัตรา 1 ${res.base} = ${res.rate} ${res.target})`;
   }
@@ -213,6 +229,28 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
     }
   }
 
+  // 1b. Note Memory Ledger Recall (Instant recall of previously verified questions)
+  const cachedNote = sessionMemory.noteLedger.recallNote(message, effectiveSessionId);
+  if (cachedNote && cachedNote.answer) {
+    if (effectiveSessionId) {
+      sessionMemory.recordTurn(effectiveSessionId, {
+        userQuery: message,
+        assistantText: cachedNote.answer,
+        toolUsed: cachedNote.sourceTool || null,
+        focusEntity: cachedNote.topic || null
+      });
+    }
+    if (onToken) onToken(cachedNote.answer);
+    return {
+      text: cachedNote.answer,
+      status: 'idle',
+      feeling: 'happy',
+      toolsUsed: cachedNote.sourceTool ? [{ tool: cachedNote.sourceTool, params: {}, result: { fromNote: true }, durationMs: 0 }] : [],
+      error: null
+    };
+  }
+
+
   const toolsUsed = [];
   const observations = [];
   const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
@@ -249,6 +287,14 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       if (route.intent === 'direct') {
         const text = buildDirectReply(route.reason, toolRegistry.getAllTools());
         if (text) return replyWithoutModel(text, { feeling: 'happy' });
+      }
+      if (route.intent === 'joke') {
+        const joke = getThaiJoke(effectiveSessionId || 'default');
+        return replyWithoutModel(joke, { feeling: 'happy' });
+      }
+      if (route.intent === 'slang') {
+        const expl = route.text || explainSlangOrMeme(message);
+        if (expl) return replyWithoutModel(expl, { feeling: 'happy' });
       }
       if (route.intent === 'tool' && route.toolCall) {
         const name = route.toolCall.name;
@@ -318,18 +364,19 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       ? parsed.text.trim()
       : extractIncompleteText(raw).trim();
 
-    const wikiSummary = toolsUsed.find((t) => t.tool === 'search_wikipedia')?.result?.summary || '';
-    const cleanedText = sanitizeAnswerText(candidateText, message, wikiSummary);
+    const referenceSummary = toolsUsed.find((t) => t.tool === 'search_web' || t.tool === 'search_wikipedia')?.result?.summary || '';
+    const cleanedText = sanitizeAnswerText(candidateText, message, referenceSummary);
     const finalText = cleanedText ? clip(cleanedText, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
 
+    const topicEntity = toolsUsed[0]?.params?.topic ||
+      toolsUsed[0]?.params?.query ||
+      toolsUsed[0]?.result?.title ||
+      extractTopic(message, focusEntity) ||
+      null;
+
     // Record turn in session memory if sessionId was provided
     if (effectiveSessionId) {
-      const topicEntity = toolsUsed[0]?.params?.topic ||
-        toolsUsed[0]?.result?.title ||
-        extractTopic(message, focusEntity) ||
-        null;
-
       sessionMemory.recordTurn(effectiveSessionId, {
         userQuery: message,
         assistantText: finalText,
@@ -337,6 +384,20 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         focusEntity: topicEntity
       });
     }
+
+    // Save verified answer to Note Memory Ledger
+    const verifiedTool = toolsUsed.find((t) => t.success && (t.tool === 'search_web' || t.tool === 'search_wikipedia' || t.tool === 'calculate'));
+    if (verifiedTool && finalText && !finalText.includes('ขออภัย') && !finalText.includes('ไม่พบข้อมูล')) {
+      sessionMemory.noteLedger.saveNote({
+        sessionId: effectiveSessionId || 'global',
+        query: message,
+        answer: finalText,
+        topic: topicEntity,
+        sourceTool: verifiedTool.tool,
+        polarity: /ห้าม|อันตราย|เป็นพิษ|ไม่ได้|ผิดกฎหมาย/.test(finalText) ? 'negative_warning' : 'neutral'
+      });
+    }
+
 
     return {
       text: finalText,

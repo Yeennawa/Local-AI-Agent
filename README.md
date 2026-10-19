@@ -26,9 +26,9 @@ The system runs a quantized language model (`qwen2.5:1.5b` via Ollama) on a **Ra
 |                                                                         |
 |  [ Edge Compute Server (Raspberry Pi 5 - 4GB RAM) ]                     |
 |  * Express.js HTTP Server & FIFO RequestQueue (Concurrency Guard)       |
-|  * Thai Query Normalizer & 2-Stage Intent Router (0-shot Deterministic) |
-|  * In-Memory Session Memory (10 Turns Context, 0 Disk Writes)           |
-|  * ReAct Agent Engine & Tool Registry (8 Deterministic Tools)           |
+|  * Thai Query Normalizer & SOV Disambiguation (Smart Query Preservation) |
+|  * Note Memory Ledger & In-Memory Session Memory (0 Disk Writes)        |
+|  * ReAct Agent Engine & Tool Registry (9 Deterministic Tools)           |
 |  * Ollama Runtime (qwen2.5:1.5b, num_ctx: 1536, keep_alive: 2m)         |
 |                                                                         |
 +-------------------------------------------------------------------------+
@@ -38,31 +38,40 @@ The system runs a quantized language model (`qwen2.5:1.5b` via Ollama) on a **Ra
 
 ## 2. Key Engineering Highlights
 
-### 1. Deterministic 2-Stage Intent Router & Thai Query Normalizer
-Small edge models (1.5B parameters) are prone to hallucinating tool schemas, confusing temporal vs. factual queries, and stumbling over Thai abbreviations. This system solves that problem before prompting the LLM:
-- **Thai Query Normalizer (`normalizer.js`)**: Automatically expands Thai acronyms and colloquial forms (such as "นายก", "กทม", "จนท") into standardized search subjects.
-- **Deterministic 2-Stage Router (`router.js`)**: Evaluates incoming queries using zero-shot rule priority, separating time queries from biographical queries (preventing the "Thai Prime Minister" collision), routing arithmetic to a dedicated math evaluator, and detecting conversational chit-chat with 100% benchmark precision.
+### 1. Smart Query Preservation & Multi-Pattern Thai Analyzer
+Small edge models (1.5B parameters) are prone to hallucinating tool schemas, confusing temporal vs. factual queries, stumbling over Thai abbreviations, and misclassifying practical questions. This system solves that problem before prompting the LLM:
+- **Thai Query Normalizer & Slang Lexicon (`normalizer.js`)**: Automatically expands Thai acronyms ("นายก", "กทม", "จนท"), collapses repeated/elongated vowels ("แมวววว" -> "แมว"), and normalizes modern social slang.
+- **Active/Passive SOV Disambiguation**: Differentiates between edibility queries without an object entity (e.g. "แมวกินได้ไหม" -> human consumption of cat meat/legal protection) versus questions with subject, verb, and object (e.g. "แมวกินช็อกโกแลตได้ไหม" -> feline toxicity), preserving conversational predicates and multi-turn focus entities.
+- **Deterministic 2-Stage Router (`router.js`)**: Evaluates incoming queries using zero-shot rule priority across 18 categories, routing practical and life queries to open web search, encyclopedic definitions to Wikipedia, and conversational chit-chat with 100% benchmark precision.
 
-### 2. Deep Wikipedia Retrieval & 100% Faithful Synthesis
+### 2. Note Memory Ledger (Zero Latency & CoALA Architecture)
+- **In-Memory QA Ledger (`memory.js`)**: Caches verified factual answers in RAM (0 MicroSD card writes) with LRU eviction and 3-tier recall (Exact canonical key, high-overlap fuzzy semantic matching with subject contradiction guard, and multi-turn topic context injection).
+- **0ms Instant Recall**: Answering identical or colloquially rephrased queries instantly without executing LLM inference, completely eliminating repeated hallucinations.
+
+### 3. Deep Wikipedia Retrieval & 100% Faithful Synthesis
 - **5-Tier Retrieval Strategy (`wiki.js`)**: Executes Thai Wikipedia primary lookup, English fallback, disambiguation page rejection, semantic relevance validation, and in-article deep passage extraction.
 - **Windowed Passage Extraction**: Identifies the exact paragraph answering complex relational queries (e.g. "What did Einstein win the Nobel Prize for?") rather than truncating at the generic lead summary.
-- **Zero Hallucination Synthesis**: Forces `temperature: 0.0` during Wikipedia summarization and employs sentence-boundary validation to guarantee that answers strictly reflect verifiable facts.
+- **Zero Hallucination Synthesis & Polarity Guard**: Forces `temperature: 0.0` during Wikipedia summarization and employs sentence-boundary and toxicity/polarity validation to guarantee that answers strictly reflect verifiable facts.
 
-### 3. Suite of 8 Deterministic Tools
+### 4. Suite of 9 Deterministic Tools
 All tools are registered with schema validation and an automatic 5-second circuit breaker in `AI-Agent/tools/registry.js`:
 - `get_system_info`: Inspects real-time CPU load, memory usage, temperature, and uptime.
 - `get_current_time`: Returns ISO date and localized time formatted for the requested timezone.
 - `calculate`: Evaluates arithmetic expressions safely without `eval()`.
 - `search_wikipedia`: Performs deep factual retrieval with relevance guards and passage scoring.
+- `search_web`: Performs zero-API-key open web queries via DuckDuckGo HTML Lite and Wikipedia fallback.
 - `get_news`: Pulls breaking news from Google News RSS with Thai category filtering.
 - `get_weather`: Retrieves real-time weather and temperature metrics via the Open-Meteo API.
 - `get_fx`: Computes real-time foreign exchange conversions across global currencies.
 - `search_github`: Searches GitHub repositories and returns owners, stars, and language stats.
 
-### 4. Edge Hardware Protection (Raspberry Pi 5 4GB RAM)
+### 5. All-Ages Conversational Intelligence
+- **Thai Humor & Slang Engine (`culture.js`)**: Delivers curated Thai jokes and riddles with per-session non-repeating rotation, explains trendy youth slang, and supports dynamic roleplay persona adapters.
+
+### 6. Edge Hardware Protection (Raspberry Pi 5 4GB RAM)
 Running generative models on an ARM Cortex-A76 with 4GB RAM requires strict resource boundaries:
 - **FIFO Request Serialization (`queue.js`)**: Limits concurrent model executions to 1, queuing up to 10 incoming requests and returning HTTP 503 if overloaded, eliminating Linux Out-Of-Memory (OOM) crashes.
-- **Zero MicroSD Flash Wear (`memory.js`)**: All session history (up to 10 conversation turns per session) and focus entities are maintained strictly in Node.js heap memory, resulting in 0 bytes written to the SD card during chat sessions.
+- **Zero MicroSD Flash Wear (`memory.js`)**: All session history and note ledgers are maintained strictly in Node.js heap memory, resulting in 0 bytes written to the SD card during chat sessions.
 - **Optimized Model Execution (`ollamaClient.js`)**: Enforces `num_ctx: 1536`, `num_thread: 3` (leaving 1 CPU core free for network I/O and the Node.js event loop), and `keep_alive: "2m"`.
 
 ---
@@ -76,17 +85,22 @@ flowchart TD
     
     subgraph Edge_Hardware [Raspberry Pi 5 - Edge Compute]
         Server --> Queue[FIFO RequestQueue]
-        Queue --> Normalizer[Thai Query Normalizer]
-        Normalizer --> Router[2-Stage Intent Router]
+        Queue --> Normalizer[Thai Query Normalizer & SOV Analysis]
+        Normalizer --> MemoryCheck{Note Memory Ledger}
+        MemoryCheck -->|Cache Hit 0ms| FastReply[Instant Verified Reply]
+        MemoryCheck -->|Cache Miss| Router[2-Stage Intent Router]
         
         Router -->|Tool Required| Registry[Tool Registry]
+        Router -->|Chit-chat / Culture| Culture[Culture & Wit Engine]
         Router -->|Chit-chat / General| OllamaClient[Ollama Client]
+        Culture --> OllamaClient
         
         subgraph Tool_Execution [Deterministic Tools]
             Registry --> SystemInfo[get_system_info]
             Registry --> Time[get_current_time]
             Registry --> Calc[calculate]
             Registry --> Wiki[search_wikipedia]
+            Registry --> Web[search_web]
             Registry --> News[get_news]
             Registry --> Weather[get_weather]
             Registry --> FX[get_fx]
@@ -103,6 +117,7 @@ flowchart TD
         OllamaModel --> TokenStream[SSE Token Stream]
     end
     
+    FastReply --> Client
     TokenStream -->|Tokens + Feeling State| Client
     Client --> Avatar[Animated Avatar Expression]
 ```
@@ -124,21 +139,23 @@ Local-AI-Agent/
 │   ├── index.js                        # Public entry point exporting runAgent()
 │   ├── agent.js                        # ReAct controller, loop guards, and faithful synthesis
 │   ├── router.js                       # 2-Stage Intent Router
-│   ├── normalizer.js                   # Thai Query Normalizer
-│   ├── memory.js                       # In-memory Session Memory (10 turns, 0 disk writes)
+│   ├── normalizer.js                   # Thai Query Normalizer & SOV Analysis
+│   ├── memory.js                       # In-memory Session Memory & Note Memory Ledger (0 disk writes)
+│   ├── culture.js                      # Thai jokes, slang explanations, and roleplay adapters
 │   ├── queue.js                        # FIFO RequestQueue for concurrency control
 │   ├── server.js                       # Express server with SSE streaming endpoints
 │   ├── ollamaClient.js                 # Streamed Ollama client with abort controller
 │   ├── parse.js                        # Pure JSON extractor and sliding history sanitizer
 │   ├── cli.js                          # Terminal test CLI
 │   ├── README.md                       # AI-Agent module documentation
-│   └── tools/                          # Suite of 8 deterministic tools
+│   └── tools/                          # Suite of 9 deterministic tools
 │       ├── registry.js                 # Tool registration and schema validator
 │       ├── systemInfo.js               # get_system_info tool
 │       ├── time.js                     # get_current_time tool
 │       ├── calculator.js               # calculate tool
 │       ├── github.js                   # search_github tool
 │       ├── wiki.js                     # search_wikipedia tool
+│       ├── webSearch.js                # search_web tool (zero-key web queries)
 │       ├── news.js                     # get_news tool
 │       ├── feedParser.js               # RSS feed parser helper
 │       ├── weather.js                  # get_weather tool
@@ -151,7 +168,7 @@ Local-AI-Agent/
 ├── .agents/                            # Local AI Agent Developer Skills
 │   └── skills/                         # codebase-design, code-review, git-guardrails, tdd, etc.
 ├── tests/                              # Automated test suites
-│   ├── *.test.js                       # 205 unit & integration tests across 49 suites
+│   ├── *.test.js                       # 226 unit & integration tests across 59 suites
 │   └── eval/                           # Accuracy and memory benchmark runner
 ├── package.json                        # Node.js project manifest (ES Modules)
 ├── .gitignore                          # Clean repository rules
@@ -166,11 +183,11 @@ The system undergoes rigorous regression testing using Node.js built-in test run
 
 | Metric | Target | Measured Result | Status |
 | :--- | :--- | :--- | :--- |
-| **Unit & Integration Tests** | 100% Pass | **205 / 205 Passed** (49 Suites) | PASS |
-| **Router Intent Accuracy** | >= 95.0% | **60 / 60 (100.0%)** | PASS |
+| **Unit & Integration Tests** | 100% Pass | **226 / 226 Passed** (59 Suites) | PASS |
+| **Router Intent Accuracy** | >= 95.0% | **69 / 69 (100.0%)** across 18 Categories | PASS |
 | **Multi-Turn Recall Rate (10 Turns)** | >= 90.0% | **100.0%** (Turn 1 recall at Turn 10) | PASS |
 | **MicroSD Card Writes** | 0 Bytes | **0 Bytes** (Pure RAM Ledger) | PASS |
-| **Node.js Memory Footprint (RSS)** | < 128 MB | **~51.4 MB** | PASS |
+| **Node.js Memory Footprint (RSS)** | < 128 MB | **~40.1 MB** | PASS |
 | **Model Resident Memory** | < 1.5 GB | **~1.2 GB** (`qwen2.5:1.5b`) | PASS |
 | **Wikipedia Hallucination Rate** | 0.0% | **0.0%** (Strict Passage Verification) | PASS |
 
@@ -220,10 +237,10 @@ http://localhost:3000
 ### Step 4: Run Verification Tests
 
 ```bash
-# Run all 205 unit and integration tests
+# Run all 226 unit and integration tests
 npm test
 
-# Run quality and intent accuracy benchmark (60 evaluations)
+# Run quality and intent accuracy benchmark (69 evaluations across 18 categories)
 node tests/eval/runner.js
 
 # Test interactive conversation via Terminal CLI

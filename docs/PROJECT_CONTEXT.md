@@ -207,8 +207,9 @@ Local-AI-Agent/
 │   ├── index.js                    # Entry point หลัก (Deep Module seam ส่งออก runAgent)
 │   ├── agent.js                    # ReAct controller, faithful synthesis, prompt templates
 │   ├── router.js                   # 2-Stage Intent Router คัดแยกประเภทคำถามด้วย Deterministic Rules
-│   ├── normalizer.js               # Thai Query Normalizer ถอดคำย่อและขยายคีย์เวิร์ด
-│   ├── memory.js                   # In-memory Session Memory (10 turns, 0 disk writes)
+│   ├── normalizer.js               # Thai Query Normalizer ถอดคำย่อ, ขยายคีย์เวิร์ด, SOV Disambiguation
+│   ├── memory.js                   # In-memory Session Memory & Note Memory Ledger (0 disk writes)
+│   ├── culture.js                  # มุกตลก คำศัพท์วัยรุ่น และ Roleplay Persona Adapter
 │   ├── queue.js                    # FIFO RequestQueue ป้องกัน Raspberry Pi 5 แรมเต็ม (OOM)
 │   ├── server.js                   # Express server รองรับ /api/chat และ /api/chat/stream (SSE)
 │   ├── ollamaClient.js             # Streamed Ollama client พร้อม abort controller และ Pi options
@@ -222,6 +223,7 @@ Local-AI-Agent/
 │       ├── calculator.js           # เครื่องมือคำนวณคณิตศาสตร์ปลอดภัย (calculate)
 │       ├── github.js               # เครื่องมือค้นหาคลังโค้ดและผู้ใช้ GitHub (search_github)
 │       ├── wiki.js                 # ค้นหา Wikipedia พร้อม Deep Passage Retrieval (search_wikipedia)
+│       ├── webSearch.js            # ค้นหาเว็บเปิด Zero-Key (DuckDuckGo Lite & Wikipedia Snippet) (search_web)
 │       ├── news.js                 # เครื่องมือดึงข่าวสารล่าสุดจาก Google News RSS (get_news)
 │       ├── feedParser.js           # ตัวแยกส่วน XML/RSS Feed
 │       ├── weather.js              # ตรวจสอบสภาพอากาศ Open-Meteo Real-time (get_weather)
@@ -233,8 +235,8 @@ Local-AI-Agent/
 │   └── ReadMe.md                   # เอกสารประกอบของ Frontend
 ├── .agents/                        # โฟลเดอร์เก็บ Engineering Skills สำหรับ AI Pair Programming
 │   └── skills/                     # codebase-design, code-review, git-guardrails-claude-code ฯลฯ
-├── tests/                          # ชุดการทดสอบระบบ (205 tests ผ่าน 100%)
-│   ├── *.test.js                   # ชุดทดสอบ Unit & Integration 49 suites ครบทุกโมดูล
+├── tests/                          # ชุดการทดสอบระบบ (226 tests, 59 suites ผ่าน 100%)
+│   ├── *.test.js                   # ชุดทดสอบ Unit & Integration ครบทุกโมดูล
 │   └── eval/                       # ชุดทดสอบ Benchmark ประเมิน Router Accuracy และ 10-turn Recall
 ├── package.json                    # กำหนดคุณสมบัติโปรเจกต์ ES Module ("type": "module")
 ├── .gitignore                      # ละเว้น node_modules, tests, logs, .env
@@ -265,13 +267,13 @@ Local-AI-Agent/
 ```bash
 node --test tests/*.test.js
 ```
-รันการทดสอบทั้งหมด 205 ข้อ (49 suites) ครอบคลุมทั้งตรรกะ ReAct ออฟไลน์, การสกัด JSON, กลไก Timeout/Abort, ความปลอดภัยของพารามิเตอร์, Intent Router, Thai Query Normalizer, และการดึงข้อมูลย่อหน้าลึกจาก Wikipedia
+รันการทดสอบทั้งหมด 226 ข้อ (59 suites) ครอบคลุมทั้งตรรกะ ReAct ออฟไลน์, การสกัด JSON, กลไก Timeout/Abort, ความปลอดภัยของพารามิเตอร์, Intent Router, Thai Query Normalizer, Active/Passive SOV Analysis, Note Memory Ledger, Zero-Key Web Search, และ All-Ages Conversational Intelligence
 
 ### การรัน Benchmark ประเมินความแม่นยำ:
 ```bash
 node tests/eval/runner.js
 ```
-ตรวจสอบ Router Accuracy (100%), 10-Turn Recall Rate (100%), RSS Memory (< 55MB), และ MicroSD Card Writes (0 bytes)
+ตรวจสอบ Router Accuracy (100% 69/69 queries ข้าม 18 หมวดหมู่), 10-Turn Recall Rate (100%), RSS Memory (< 42MB), และ MicroSD Card Writes (0 bytes)
 
 ### การรันทดสอบคุยกับ Agent ผ่าน Terminal:
 ```bash
@@ -284,8 +286,11 @@ node AI-Agent/cli.js "ตอนนี้เวลาเท่าไหร่แ�
 # ทดสอบถามข้อมูลบุคคลหรือประวัติศาสตร์ (เรียกใช้ search_wikipedia แบบ Deep Passage)
 node AI-Agent/cli.js "ไอน์สไตน์ได้รางวัลโนเบลจากเรื่องอะไร"
 
-# ทดสอบการคุยทั่วไป (ไม่เรียกใช้เครื่องมือ)
-node AI-Agent/cli.js "สวัสดีครับ แนะนำตัวหน่อย"
+# ทดสอบถามข้อมูลบริโภคหรือชีวิตประจำวัน (เรียกใช้ search_web พร้อม SOV Disambiguation)
+node AI-Agent/cli.js "แมวกินช็อกโกแลตได้ไหม"
+
+# ทดสอบการคุยทั่วไปหรือมุกตลก (เรียกใช้ culture wit engine)
+node AI-Agent/cli.js "เล่ามุกฮาๆ ให้ฟังหน่อย"
 ```
 
 ---
@@ -298,8 +303,8 @@ node AI-Agent/cli.js "สวัสดีครับ แนะนำตัวห
   - ห้าม commit ไฟล์ .env หรือกุญแจสำคัญ
   - ห้ามใช้คำสั่ง git push --force หรือทำ destructive rebase บน branch ที่ใช้งานร่วมกัน
 - เงื่อนไขก่อนส่งมอบงาน (Handoff Checklist):
-  1. การรัน node --test tests/*.test.js ผ่านครบ 100% (205/205 tests)
-  2. การรัน node tests/eval/runner.js ผ่านครบ 100%
+  1. การรัน node --test tests/*.test.js ผ่านครบ 100% (226/226 tests)
+  2. การรัน node tests/eval/runner.js ผ่านครบ 100% (69/69 queries, 10-turn recall 100%)
   3. เอกสารทางเทคนิคใน docs/, AI-Agent/README.md และ README.md หลัก อัปเดตตรงตามโค้ดจริง
   4. ตรวจสอบสถานะ git status ให้สะอาดเรียบร้อย
 

@@ -6,6 +6,7 @@ import { githubTool } from './github.js';
 import { newsTool } from './news.js';
 import { weatherTool } from './weather.js';
 import { fxTool } from './fx.js';
+import { webSearchTool } from './webSearch.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 5000;
 
@@ -21,7 +22,9 @@ export class ToolRegistry {
     this.registerTool(newsTool);
     this.registerTool(weatherTool);
     this.registerTool(fxTool);
+    this.registerTool(webSearchTool);
   }
+
 
   registerTool(tool) {
     if (!tool || !tool.name || typeof tool.execute !== 'function') {

@@ -13,21 +13,23 @@ AI-Agent/
 ├── index.js          Entry point หลัก (Deep Module seam ส่งออกฟังก์ชัน runAgent)
 ├── agent.js          ตัวควบคุม ReAct loop, loop guard, faithful synthesis และ prompt templates
 ├── router.js         ระบบคัดกรองเจตนา 2 ขั้น (Intent Router) คัดแยกงาน Tool โดยไม่ต้องพึ่งพา LLM
-├── normalizer.js     ระบบปรับสภาพข้อความภาษาไทย (Thai Query Normalizer) ถอดคำย่อและขยายคีย์เวิร์ด
-├── memory.js         ระบบความจำเซสชันในหน่วยความจำ (In-memory Session Memory) รองรับ 10 Turns
+├── normalizer.js     ระบบปรับสภาพข้อความภาษาไทย (Thai Query Normalizer) ถอดคำย่อ, ขยายคีย์เวิร์ด, SOV Disambiguation
+├── memory.js         ระบบความจำเซสชันและ Note Memory Ledger ในหน่วยความจำ (0 MicroSD card writes)
+├── culture.js        โมดูลความรู้รอบตัว มุกตลก คำศัพท์วัยรุ่น และ Roleplay Persona Adapter
 ├── queue.js          ระบบคิวคำขอแบบเข้าก่อน-ออกก่อน (FIFO RequestQueue) ควบคุมการรันบน Pi 5
 ├── server.js         Express Server ให้บริการ API (/api/chat, /api/chat/stream, /api/health)
 ├── ollamaClient.js   ตัวเชื่อมต่อ Ollama API (stream, abort controller, keep-alive 2m)
 ├── parse.js          ฟังก์ชันอ่าน JSON จากโมเดล, ตรวจสอบ feeling และล้างประวัติแชต (sliding window)
 ├── cli.js            สคริปต์สำหรับทดสอบรันคำถามผ่าน Terminal
 ├── README.md         เอกสารฉบับนี้
-└── tools/            โฟลเดอร์เก็บฟังก์ชันเครื่องมือ (Deterministic Tools ทั้ง 8 ตัว)
+└── tools/            โฟลเดอร์เก็บฟังก์ชันเครื่องมือ (Deterministic Tools ทั้ง 9 ตัว)
     ├── registry.js   ระบบลงทะเบียน ตรวจสอบสิทธิ์ และคุม Timeout (5 วินาที) ของ Tool
     ├── systemInfo.js เครื่องมืออ่านสถานะเครื่องและแรม (get_system_info)
     ├── time.js       เครื่องมืออ่านเวลาและวันที่ปัจจุบัน (get_current_time)
     ├── calculator.js เครื่องมือคำนวณคณิตศาสตร์ปลอดภัย (calculate)
     ├── github.js     เครื่องมือค้นหาคลังโค้ดและผู้ใช้ GitHub (search_github)
     ├── wiki.js       เครื่องมือค้นหา Wikipedia พร้อมกลยุทธ์ 5 ชั้นและ Deep Passage Retrieval (search_wikipedia)
+    ├── webSearch.js  เครื่องมือค้นหาเว็บเปิด Zero-Key (search_web) ดึงผลลัพธ์จาก DuckDuckGo Lite & Wikipedia
     ├── news.js       เครื่องมือดึงข่าวสารล่าสุดจาก Google News RSS (get_news)
     ├── feedParser.js โมดูลช่วยแปลงข้อมูล RSS Feed สำหรับข่าว
     ├── weather.js    เครื่องมือตรวจสอบสภาพอากาศและอุณหภูมิ Real-time (get_weather)
@@ -38,16 +40,17 @@ AI-Agent/
 
 ## 2. เครื่องมือที่รองรับในระบบ (Built-in Deterministic Tools)
 
-ระบบมีเครื่องมือประมวลผลที่แม่นยำ 8 ตัว ทำงานแบบ Deterministic โดยไม่พึ่งพาการสุ่มของโมเดล:
+ระบบมีเครื่องมือประมวลผลที่แม่นยำ 9 ตัว ทำงานแบบ Deterministic โดยไม่พึ่งพาการสุ่มของโมเดล:
 
 1. `get_system_info`: อ่านค่าสถานะฮาร์ดแวร์ของ Raspberry Pi 5 (RAM รวม, RAM เหลือ, CPU Usage, อุณหภูมิ, Uptime)
 2. `get_current_time`: ตรวจสอบวันและเวลาปัจจุบัน รองรับการระบุ Timezone (ค่าเริ่มต้น: `Asia/Bangkok`)
 3. `calculate`: คำนวณนิพจน์คณิตศาสตร์อย่างแม่นยำ ปราศจากการใช้ `eval()` โดยรองรับทั้งเลขฐานสิบ ทศนิยม และฟังก์ชันตรีโกณมิติพื้นฐาน
 4. `search_wikipedia`: ค้นหาข้อมูลเชิงลึกจาก Wikipedia ภาษาไทยและอังกฤษ พร้อมระบบข้าม Disambiguation, ตรวจสอบ Semantic Relevance, และดึง Passage ที่ตรงกับประเด็นคำถาม
-5. `get_news`: ดึงข่าวเด่นล่าสุดจาก Google News RSS ภาษาไทย รองรับการกรองตามหมวดหมู่ (`technology`, `business`, `world`, `general`)
-6. `get_weather`: ตรวจสอบสภาพอากาศ อุณหภูมิ ความชื้น และความเร็วลมแบบ Real-time จาก Open-Meteo API
-7. `get_fx`: คำนวณและแปลงอัตราแลกเปลี่ยนเงินตราต่างประเทศล่าสุด (เช่น USD, JPY, EUR เป็น THB)
-8. `search_github`: ค้นหา Repository ยอดนิยม ข้อมูลเจ้าของโปรเจกต์ จำนวนดาว และภาษาที่ใช้บน GitHub
+5. `search_web`: ค้นหาข้อมูลเว็บเปิดแบบ Zero-Key API ไม่เสียค่าใช้จ่าย ดึงข้อมูลจาก DuckDuckGo HTML Lite และ Wikipedia Snippet พร้อม LRU Cache
+6. `get_news`: ดึงข่าวเด่นล่าสุดจาก Google News RSS ภาษาไทย รองรับการกรองตามหมวดหมู่ (`technology`, `business`, `world`, `general`)
+7. `get_weather`: ตรวจสอบสภาพอากาศ อุณหภูมิ ความชื้น และความเร็วลมแบบ Real-time จาก Open-Meteo API
+8. `get_fx`: คำนวณและแปลงอัตราแลกเปลี่ยนเงินตราต่างประเทศล่าสุด (เช่น USD, JPY, EUR เป็น THB)
+9. `search_github`: ค้นหา Repository ยอดนิยม ข้อมูลเจ้าของโปรเจกต์ จำนวนดาว และภาษาที่ใช้บน GitHub
 
 ---
 
@@ -56,8 +59,9 @@ AI-Agent/
 1. **FIFO Concurrency Control (`queue.js`)**:
    - ป้องกันการเกิด Out of Memory (OOM) โดยจำกัดให้ Ollama รันการอนุมาน (Inference) ได้ทีละ 1 Request เท่านั้น
    - รองรับคิวรอสูงสุด 10 คำขอ หากเกินจะตอบกลับด้วย HTTP 503 (`Server busy: Queue is full`) ทันทีโดยระบบไม่ล่ม
-2. **Zero Disk Writes (`memory.js`)**:
+2. **Zero Disk Writes & Note Memory Ledger (`memory.js`)**:
    - ประวัติการสนทนาต่อเนื่อง (Multi-turn Context สูงสุด 10 รอบ) และ Focus Entity จัดเก็บใน RAM ผ่านโครงสร้างข้อมูล JavaScript Map ทั้งหมด
+   - Note Memory Ledger จดจำคำถามและคำตอบที่ผ่านการตรวจสอบแล้วใน RAM เพื่อตอบกลับคำถามเดิมหรือคำถามคล้ายกันใน 0ms โดยไม่ต้องเรียกโมเดล ลดภาระการคำนวณและลดโอกาสการเกิดอาการหลอน (Zero Hallucination)
    - ไม่มีการเขียนบันทึกไฟล์ชั่วคราวลงใน MicroSD Card เพื่อยืดอายุการใช้งาน Flash Memory ของบอร์ด
 3. **Intent Router & Normalizer (`router.js` & `normalizer.js`)**:
    - แปลงคำย่อภาษาไทย เช่น "นายก", "กทม", "จนท" ให้เป็นคำเต็ม
@@ -97,10 +101,10 @@ node AI-Agent/server.js
 ### การทดสอบระบบ:
 
 ```bash
-# รันชุดทดสอบ Unit และ Integration Tests ทั้งหมด (205 tests)
+# รันชุดทดสอบ Unit และ Integration Tests ทั้งหมด (226 tests, 59 suites)
 npm test
 
-# รันชุดทดสอบประเมินผลคุณภาพและความแม่นยำของ Intent Router (60/60 tests)
+# รันชุดทดสอบประเมินผลคุณภาพและความแม่นยำของ Intent Router & Memory (69/69 tests)
 node tests/eval/runner.js
 
 # ทดสอบคุยกับ Agent ผ่าน Terminal โดยตรง

@@ -1,4 +1,5 @@
 import { normalizeQuery, expandAbbreviations } from './normalizer.js';
+import { getThaiJoke, explainSlangOrMeme, buildRoleplayPrompt } from './culture.js';
 
 export function extractTopic(message, focusEntity = null) {
   if (typeof message !== 'string') return '';
@@ -137,6 +138,24 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     return { intent: 'direct', toolCall: null, confidence: 'high', reason: 'unsupported_platform' };
   }
 
+  // 1c-1. Jokes and humor
+  const isJoke = /^(?:เล่า(?:เรื่อง)?(?:มุก|โจ๊ก)?(?:ตลก|ขำขัน|ฮาๆ|ขำๆ|กวนๆ)|ขอ(?:มุก|โจ๊ก)?(?:ตลก|ฮาๆ|ขำๆ)|มุกตลก|joke)/i.test(raw);
+  if (isJoke) {
+    return { intent: 'joke', toolCall: null, confidence: 'high', reason: 'joke_request' };
+  }
+
+  // 1c-2. Slang & Pop Culture Definitions
+  const norm = normalizeQuery(raw, { focusEntity });
+  if (norm.isSlang && norm.slangExplanation) {
+    return { intent: 'slang', toolCall: null, confidence: 'high', reason: 'slang_definition', text: norm.slangExplanation };
+  }
+
+  // 1c-3. Roleplay & Persona Adapter
+  const roleplayInstruction = buildRoleplayPrompt(raw);
+  if (roleplayInstruction) {
+    return { intent: 'roleplay', toolCall: null, confidence: 'high', reason: 'roleplay_persona', prompt: roleplayInstruction };
+  }
+
   // 1d. News of any category or topic.
   if (NEWS_REGEX.test(raw)) {
     return {
@@ -264,8 +283,23 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     }
   }
 
-  // 7. Knowledge & Conceptual Questions (Wikipedia)
-  const norm = normalizeQuery(raw, { focusEntity });
+  // 7. Practical & Everyday Life Queries (Web Search)
+  const isExplicitWiki = /(?:วิกิ|wikipedia|คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์)/i.test(raw);
+  if (norm.isPracticalQuery && !isExplicitWiki) {
+    const query = norm.searchCandidates[0] || raw;
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'search_web',
+        params: { query }
+      },
+      confidence: 'high',
+      reason: 'practical_web_search'
+    };
+  }
+
+
+  // 8. Knowledge & Conceptual Questions (Wikipedia)
   const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
 
   if (isKnowledgePattern || norm.isKnowledgeIntent || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
@@ -283,11 +317,12 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     }
   }
 
-  // 8. Ambiguous / Complex request requiring LLM reasoning
+  // 9. Ambiguous / Complex request requiring LLM reasoning
   return {
     intent: 'unknown',
     toolCall: null,
     confidence: 'low',
     reason: 'ambiguous_query'
   };
+
 }
