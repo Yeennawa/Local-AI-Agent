@@ -44,12 +44,15 @@ Version: 1.1.0 (Edge Architecture Blueprint)
 │  │     └── Calls: runAgent({ message, conversationHistory })        │  │
 │  │                                                                  │  │
 │  │  2. AI Agent Deep Module (AI-Agent/)                             │  │
-│  │     ├── ReAct Controller (decideNextStep, synthesizeAnswer)      │  │
-│  │     ├── Resilient Resolution (resolveToolCall, schema fallback)  │  │
-│  │     ├── Pure Parser & Sanitizer (parse.js)                       │  │
-│  │     ├── Tool Registry (get_system_info, get_current_time)        │  │
-│  │     ├── Streamed Ollama Client with Abort & Pi Tuning            │  │
-│  │     └── Circuit Breakers (Loop Guard <= 3, Deduplication Guard)  │  │
+│  │     ├── Pipeline Controller (agent.js: recall -> resolve -> route)│  │
+│  │     ├── Conversational Query Resolver (resolver.js: multi-turn)   │  │
+│  │     ├── Deterministic Intent Router (router.js: 100% fast path)   │  │
+│  │     ├── Answer Composer (answer.js: zero-token structured tools) │  │
+│  │     ├── Safety & Polarity Guard (safety.js: danger/poison check) │  │
+│  │     ├── Thai Query Normalizer (normalizer.js: SOV, abbreviations)│  │
+│  │     ├── In-Memory Ledger (memory.js: 0 MicroSD writes)           │  │
+│  │     ├── Tool Registry (registry.js: 9 deterministic tools)       │  │
+│  │     └── Streamed Ollama Client with FIFO Request Queue           │  │
 │  │                                                                  │  │
 │  │  3. Local LLM Runtime (Ollama Daemon)                            │  │
 │  │     └── Model: qwen2.5:1.5b (q4_k_m, num_ctx: 1536)              │  │

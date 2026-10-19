@@ -11,8 +11,11 @@
 ```text
 AI-Agent/
 ├── index.js          Entry point หลัก (Deep Module seam ส่งออกฟังก์ชัน runAgent)
-├── agent.js          ตัวควบคุม ReAct loop, loop guard, faithful synthesis และ prompt templates
-├── router.js         ระบบคัดกรองเจตนา 2 ขั้น (Intent Router) คัดแยกงาน Tool โดยไม่ต้องพึ่งพา LLM
+├── agent.js          ตัวควบคุมหลัก (pipeline: metaRecall -> noteRecall -> resolve -> route -> execute -> compose -> remember)
+├── router.js         ระบบคัดกรองเจตนาแบบ Deterministic 100% ปราศจาก LLM decision loop
+├── resolver.js       ระบบขยายคำถามต่อเนื่อง (Conversational Query Resolver) เติมประธาน/กรรมที่หาย
+├── answer.js         ระบบจัดรูปคำตอบ (Answer Composer) ตอบข้อมูลโครงสร้างด้วย Template (0 Tokens) และเกลาบริบทเว็บ/วิกิ
+├── safety.js         ระบบป้องกันความปลอดภัยและควบคุม Polarity (Polarity & Warning Guard)
 ├── normalizer.js     ระบบปรับสภาพข้อความภาษาไทย (Thai Query Normalizer) ถอดคำย่อ, ขยายคีย์เวิร์ด, SOV Disambiguation
 ├── memory.js         ระบบความจำเซสชันและ Note Memory Ledger ในหน่วยความจำ (0 MicroSD card writes)
 ├── culture.js        โมดูลความรู้รอบตัว มุกตลก คำศัพท์วัยรุ่น และ Roleplay Persona Adapter

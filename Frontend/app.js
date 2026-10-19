@@ -57,12 +57,17 @@ async function handleSubmit(event) {
           if (statusData.status === "using_tool") {
             const toolLabels = {
               search_wikipedia: "กำลังค้นหา Wikipedia...",
+              search_web: "กำลังค้นหาข้อมูลจากเว็บ...",
               calculate: "กำลังคำนวณตัวเลข...",
               search_github: "กำลังค้นหา GitHub...",
               get_system_info: "กำลังตรวจสอบสถานะเครื่อง...",
-              get_current_time: "กำลังตรวจสอบเวลา..."
+              get_current_time: "กำลังตรวจสอบเวลา...",
+              get_weather: "กำลังตรวจสอบสภาพอากาศ...",
+              get_fx: "กำลังแปลงอัตราแลกเปลี่ยน...",
+              get_news: "กำลังดึงข่าวสารล่าสุด..."
             };
-            thinkingBubble.textContent = toolLabels[statusData.tool] || `กำลังเรียกใช้ ${statusData.tool}...`;
+            const label = statusData.label ? `กำลัง${statusData.label}...` : (toolLabels[statusData.tool] || `กำลังเรียกใช้ ${statusData.tool}...`);
+            thinkingBubble.textContent = label;
           } else if (statusData.status === "synthesizing") {
             thinkingBubble.textContent = "กำลังเรียบเรียงคำตอบ...";
           }
@@ -80,7 +85,7 @@ async function handleSubmit(event) {
       if (!assistantBubble) {
         thinkingBubble.remove();
         if (reply?.text) {
-          appendBubble("assistant", reply.text);
+          assistantBubble = appendBubble("assistant", reply.text);
         }
       } else if (reply?.text) {
         assistantBubble.textContent = reply.text;
@@ -88,7 +93,25 @@ async function handleSubmit(event) {
     } else {
       reply = await sendMessageToBackend(prompt);
       thinkingBubble.remove();
-      appendBubble("assistant", reply.text);
+      assistantBubble = appendBubble("assistant", reply.text);
+    }
+
+    // Attach permanent badge if tools were used or retrieved from memory
+    if (reply?.toolsUsed?.length > 0 && assistantBubble) {
+      const toolNames = reply.toolsUsed
+        .filter(function (t) { return t.tool; })
+        .map(function (t) {
+          if (t.result?.fromNote) return "คลังความจำ (0ms)";
+          const name = t.label || t.tool;
+          const time = t.durationMs !== undefined ? ` (${(t.durationMs / 1000).toFixed(1)}s)` : '';
+          return `${name}${time}`;
+        });
+      if (toolNames.length > 0) {
+        const badge = document.createElement("div");
+        badge.className = "tool-used-badge";
+        badge.textContent = `[ ใช้เครื่องมือ: ${toolNames.join(", ")} ]`;
+        assistantBubble.appendChild(badge);
+      }
     }
 
     setAvatarFeeling(reply?.feeling || "neutral");

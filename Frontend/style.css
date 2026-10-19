@@ -311,6 +311,19 @@ body {
   border-bottom-left-radius: 4px;
 }
 
+.tool-used-badge {
+  display: block;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 0.78rem;
+  color: var(--muted-text-color);
+  letter-spacing: 0.02em;
+  font-family: monospace;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .chat-bubble.thinking {
   align-self: flex-start;
   color: var(--muted-text-color);
