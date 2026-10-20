@@ -52,10 +52,11 @@ Version: 1.1.0 (Edge Architecture Blueprint)
 │  │     ├── Thai Query Normalizer (normalizer.js: SOV, abbreviations)│  │
 │  │     ├── In-Memory Ledger (memory.js: 0 MicroSD writes)           │  │
 │  │     ├── Tool Registry (registry.js: 9 deterministic tools)       │  │
+│  │     ├── Dynamic Model Manager (modelManager.js: sequential unload)│  │
 │  │     └── Streamed Ollama Client with FIFO Request Queue           │  │
 │  │                                                                  │  │
 │  │  3. Local LLM Runtime (Ollama Daemon)                            │  │
-│  │     └── Model: qwen2.5:1.5b (q4_k_m, num_ctx: 1536)              │  │
+│  │     └── Models: qwen2.5:1.5b (Lite) / qwen2.5:3b (Advanced)      │  │
 │  └──────────────────────────────────────────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -96,7 +97,7 @@ Version: 1.1.0 (Edge Architecture Blueprint)
 | Max Process RAM | ไม่เกิน 2.2 GB (Model + Node.js) | เหลือแรมอย่างน้อย 1.8 GB ให้ระบบปฏิบัติการ ป้องกันการโดน Linux OOM Killer ปิดโปรเซส |
 | Context Window (num_ctx) | 1536 tokens | ป้องกัน KV Cache จองแรมเกินจำเป็น และรักษาความเร็ว prefill ให้อยู่ในช่วง 1.0 - 1.5 วินาที |
 | CPU Threads (num_thread) | 3 threads | Pi 5 มี 4 คอร์ การใช้ 3 คอร์รันโมเดลช่วยเหลือ 1 คอร์ให้ Node.js Event Loop และงานเครือข่าย |
-| Model & Quantization | qwen2.5:1.5b (q4_k_m, 986 MB) | สัดส่วนความแม่นยำในการเรียก Tool ต่อการกินแรม (~1.3 GB) คุ้มค่าที่สุดบน Pi 5 |
+| Model & Quantization | qwen2.5:1.5b (Lite, 986 MB) / qwen2.5:3b (Adv, 1.9 GB) | สลับโมเดลแบบไดนามิก ปล่อยโมเดลเก่าด้วย keep_alive: 0 และเช็ก ps() ก่อนโหลดใหม่ ไม่ให้เกิน 2.4 GB |
 | Keep-Alive (keep_alive) | 2m (2 นาที) | หลีกเลี่ยง Cold Start ในการคุยต่อเนื่อง และคืนแรม 1.3 GB อัตโนมัติเมื่อไม่มีการใช้งาน |
 | Sliding Window | 4 ข้อความล่าสุด (2 turns) | กรองเฉพาะ role user และ assistant ตัดข้อความเก่าทิ้งเพื่อคุมขนาด prompt ไม่ให้บวม |
 | Decision Token Limit | 96 tokens | จำกัดคำตอบในรอบตัดสินใจให้ออกมาเฉพาะ JSON สั้นๆ เพื่อประหยัดเวลาและ token |

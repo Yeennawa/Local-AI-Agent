@@ -10,3 +10,4 @@ export { RequestQueue, requestQueue } from './queue.js';
 export { resolveFollowupQuery } from './resolver.js';
 export { composeStructuredAnswer, formatCleanContext, polishAnswerText } from './answer.js';
 export { containsDangerWarning, isFalselyPositiveAnswer } from './safety.js';
+export { ModelManager, modelManager, MODEL_MODES } from './modelManager.js';

@@ -52,12 +52,21 @@
           <p>พร้อมช่วยตอบคำถาม</p>
         </div>
 
+        <div class="model-switcher" id="model-switcher" role="group" aria-label="เลือกโหมดโมเดล AI">
+          <button type="button" class="mode-button active" data-mode="lite" id="mode-lite-btn" title="โหมดประหยัด RAM (1.5B)">
+            Lite (1.5B)
+          </button>
+          <button type="button" class="mode-button" data-mode="advanced" id="mode-advanced-btn" title="โหมดประสิทธิภาพสูง (3B)">
+            Adv (3B)
+          </button>
+        </div>
+
         <button type="button" class="new-chat-button" id="new-chat-button">
           แชตใหม่
         </button>
 
-        <span class="status-badge">
-          Local
+        <span class="status-badge" id="model-status-badge">
+          Lite Ready
         </span>
 
       </div>

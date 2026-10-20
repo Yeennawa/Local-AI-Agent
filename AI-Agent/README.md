@@ -19,8 +19,9 @@ AI-Agent/
 ├── normalizer.js     ระบบปรับสภาพข้อความภาษาไทย (Thai Query Normalizer) ถอดคำย่อ, ขยายคีย์เวิร์ด, SOV Disambiguation
 ├── memory.js         ระบบความจำเซสชันและ Note Memory Ledger ในหน่วยความจำ (0 MicroSD card writes)
 ├── culture.js        โมดูลความรู้รอบตัว มุกตลก คำศัพท์วัยรุ่น และ Roleplay Persona Adapter
+├── modelManager.js   ระบบจัดการสลับโมเดลแบบไดนามิก (ModelManager) ควบคุม sequential unload และ RAM verification
 ├── queue.js          ระบบคิวคำขอแบบเข้าก่อน-ออกก่อน (FIFO RequestQueue) ควบคุมการรันบน Pi 5
-├── server.js         Express Server ให้บริการ API (/api/chat, /api/chat/stream, /api/health)
+├── server.js         Express Server ให้บริการ API (/api/chat, /api/chat/stream, /api/health, /api/model/*)
 ├── ollamaClient.js   ตัวเชื่อมต่อ Ollama API (stream, abort controller, keep-alive 2m)
 ├── parse.js          ฟังก์ชันอ่าน JSON จากโมเดล, ตรวจสอบ feeling และล้างประวัติแชต (sliding window)
 ├── cli.js            สคริปต์สำหรับทดสอบรันคำถามผ่าน Terminal
@@ -73,6 +74,10 @@ AI-Agent/
    - กำหนด `num_ctx: 1536` และ `num_thread: 3` เพื่อสงวน 1 CPU Core สำหรับ Node.js Event Loop
    - ใช้ `keep_alive: "2m"` ป้องกันการโหลดโมเดลเข้าออก RAM บ่อยครั้ง
    - กำหนด Sliding Window เก็บเฉพาะบทสนทนา 4 ข้อความล่าสุด (2 Turns) และจำกัดขนาดของข้อความไม่ให้บวม
+5. **Dynamic Model Switching & Memory Reclamation (`modelManager.js`)**:
+   - รองรับ 2 โหมด: **Lite Mode** (`qwen2.5:1.5b`, RAM ~1,150 MB) สำหรับงานทั่วไป และ **Advanced Mode** (`qwen2.5:3b`, RAM ~2,350 MB) สำหรับงานวิเคราะห์เชิงลึก
+   - ใช้กลไก **Sequential Switching**: ตรวจสอบไฟล์โมเดลบนดิสก์ก่อน (`client.list()`) -> สั่ง Unload โมเดลเก่าออกจาก RAM (`keep_alive: 0`) -> วนตรวจสอบสถานะหน่วยความจำ (`client.ps()`) จนโมเดลเก่าหายไปจริง -> จึงเริ่มโหลดโมเดลใหม่เข้า RAM เพื่อป้องกันปัญหา Linux OOM Crash บน Raspberry Pi 5
+   - ปลอดภัยด้วย **RequestQueue Mutual Exclusion**: คำขอสลับโมเดลจะเข้าคิวรอให้การสร้างข้อความแชตปัจจุบันเสร็จสิ้นก่อนเสมอ ป้องกันการ Unload โมเดลทับซ้อนกลางคัน
 
 ---
 
@@ -158,7 +163,43 @@ Event ที่ส่งออกมา:
 - `event: done`: ส่งโครงสร้าง `AgentResponse` ฉบับเต็มเมื่อการสังเคราะห์เสร็จสิ้น
 
 ### 3. Health & Telemetry Endpoint (`GET /api/health`)
-ตรวจสอบข้อมูลสถานะฮาร์ดแวร์ คิวงาน และหน่วยความจำของบอร์ด Raspberry Pi 5:
+ตรวจสอบข้อมูลสถานะฮาร์ดแวร์ คิวงาน หน่วยความจำ และสถานะโมเดลที่ใช้งานอยู่:
 ```bash
 curl http://localhost:3000/api/health
+```
+
+### 4. Model Status Endpoint (`GET /api/model/status`)
+ตรวจสอบโหมดที่กำลังใช้งานอยู่, ชื่อโมเดล, สถานะการโหลด, และรายการโมเดลที่อยู่ใน RAM:
+```bash
+curl http://localhost:3000/api/model/status
+```
+ตัวอย่าง Response:
+```json
+{
+  "mode": "lite",
+  "model": "qwen2.5:1.5b",
+  "label": "Lite Mode (1.5B)",
+  "state": "ready",
+  "lastError": null,
+  "estimatedRamMB": 1150,
+  "loadedModels": []
+}
+```
+
+### 5. Dynamic Model Switch Endpoint (`POST /api/model/switch`)
+สลับโหมดโมเดล AI ระหว่าง `lite` (1.5B) และ `advanced` (3B) อย่างปลอดภัย:
+```bash
+curl -X POST http://localhost:3000/api/model/switch \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "advanced"}'
+```
+ตัวอย่าง Response:
+```json
+{
+  "success": true,
+  "previousMode": "lite",
+  "currentMode": "advanced",
+  "model": "qwen2.5:3b",
+  "loadedModels": ["qwen2.5:3b"]
+}
 ```

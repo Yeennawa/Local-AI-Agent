@@ -25,11 +25,110 @@ const sendButton = document.getElementById("send-button");
 const chatFeed = document.getElementById("chat-feed");
 const newChatButton = document.getElementById("new-chat-button");
 const aiCharacter = document.querySelector(".ai-character");
+const modeLiteBtn = document.getElementById("mode-lite-btn");
+const modeAdvancedBtn = document.getElementById("mode-advanced-btn");
+const modelStatusBadge = document.getElementById("model-status-badge");
+
+let currentModelMode = "lite";
+let isSwitchingModel = false;
 
 promptForm.addEventListener("submit", handleSubmit);
 if (newChatButton) {
   newChatButton.addEventListener("click", handleNewChat);
 }
+if (modeLiteBtn) {
+  modeLiteBtn.addEventListener("click", function () { handleModeSwitch("lite"); });
+}
+if (modeAdvancedBtn) {
+  modeAdvancedBtn.addEventListener("click", function () { handleModeSwitch("advanced"); });
+}
+
+function updateModelUI(mode, statusText, badgeState) {
+  currentModelMode = mode;
+  if (modeLiteBtn && modeAdvancedBtn) {
+    if (mode === "lite") {
+      modeLiteBtn.classList.add("active");
+      modeAdvancedBtn.classList.remove("active");
+    } else if (mode === "advanced") {
+      modeAdvancedBtn.classList.add("active");
+      modeLiteBtn.classList.remove("active");
+    }
+  }
+  if (modelStatusBadge) {
+    modelStatusBadge.classList.remove("switching", "error");
+    if (badgeState) {
+      modelStatusBadge.classList.add(badgeState);
+    }
+    if (statusText) {
+      modelStatusBadge.textContent = statusText;
+    } else {
+      modelStatusBadge.textContent = mode === "advanced" ? "Adv Ready" : "Lite Ready";
+    }
+  }
+}
+
+async function initModelStatus() {
+  try {
+    const res = await fetch("/api/model/status");
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.mode) {
+        updateModelUI(data.mode);
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch initial model status:", err);
+  }
+}
+
+async function handleModeSwitch(targetMode) {
+  if (isSwitchingModel || targetMode === currentModelMode) return;
+
+  isSwitchingModel = true;
+  setLoadingState(true);
+  if (modeLiteBtn) modeLiteBtn.disabled = true;
+  if (modeAdvancedBtn) modeAdvancedBtn.disabled = true;
+
+  updateModelUI(targetMode, "กำลังสลับโหมด...", "switching");
+  const switchingBubble = appendBubble("thinking", "กำลังปล่อยโมเดลเดิมจาก RAM และโหลดโหมดใหม่...");
+
+  try {
+    const res = await fetch("/api/model/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: targetMode })
+    });
+
+    const data = await res.json();
+    switchingBubble.remove();
+
+    if (res.ok && data.success) {
+      updateModelUI(data.currentMode || targetMode);
+      appendBubble("system", "สลับสู่ " + (data.currentMode === "advanced" ? "Advanced Mode (3B)" : "Lite Mode (1.5B)") + " สำเร็จแล้ว");
+    } else {
+      const errMsg = data.error || "ไม่สามารถสลับโหมดได้";
+      updateModelUI(currentModelMode, "Error", "error");
+      appendBubble("error", "การสลับโหมดล้มเหลว: " + errMsg);
+      setTimeout(function () {
+        updateModelUI(currentModelMode);
+      }, 3500);
+    }
+  } catch (err) {
+    switchingBubble.remove();
+    updateModelUI(currentModelMode, "Error", "error");
+    appendBubble("error", "เกิดข้อผิดพลาดในการเชื่อมต่อ: " + (err.message || "ไม่สามารถเชื่อมต่อ Server ได้"));
+    setTimeout(function () {
+      updateModelUI(currentModelMode);
+    }, 3500);
+  } finally {
+    isSwitchingModel = false;
+    setLoadingState(false);
+    if (modeLiteBtn) modeLiteBtn.disabled = false;
+    if (modeAdvancedBtn) modeAdvancedBtn.disabled = false;
+  }
+}
+
+initModelStatus();
 
 async function handleSubmit(event) {
   event.preventDefault();

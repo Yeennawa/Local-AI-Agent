@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
 import { sessionMemory } from './memory.js';
 import { RequestQueue, requestQueue } from './queue.js';
+import { ModelManager, modelManager } from './modelManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +14,7 @@ const __dirname = path.dirname(__filename);
 // and oversized payloads would waste RAM on the Raspberry Pi 5 before sanitizeHistory even runs.
 const JSON_BODY_LIMIT = '32kb';
 
-export function createApp(agentOptions = {}, queue = requestQueue) {
+export function createApp(agentOptions = {}, queue = requestQueue, manager = modelManager) {
   const app = express();
 
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
@@ -41,8 +42,40 @@ export function createApp(agentOptions = {}, queue = requestQueue) {
       },
       sessions: {
         activeCount: sessionMemory.sessionCount
-      }
+      },
+      model: manager?.getStatusSync ? manager.getStatusSync() : null
     });
+  });
+
+  // Dynamic model switcher endpoints
+  app.get('/api/model/status', async (_req, res) => {
+    try {
+      const status = manager?.getStatus ? await manager.getStatus() : { mode: 'lite', model: 'qwen2.5:1.5b', state: 'ready' };
+      return res.json(status);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: error?.message || 'Failed to fetch model status'
+      });
+    }
+  });
+
+  app.post('/api/model/switch', async (req, res) => {
+    const { mode } = req.body || {};
+    try {
+      const result = await queue.enqueue(() => manager.switchMode(mode));
+      if (!result?.success) {
+        return res.status(result?.statusCode || 500).json(result);
+      }
+      return res.json(result);
+    } catch (error) {
+      const code = error?.status || 500;
+      return res.status(code).json({
+        success: false,
+        error: error?.message || 'ไม่สามารถสลับโมเดลได้ในขณะนี้',
+        status: manager?.getStatusSync ? manager.getStatusSync() : null
+      });
+    }
   });
 
   app.post('/api/chat', async (req, res) => {
@@ -64,11 +97,15 @@ export function createApp(agentOptions = {}, queue = requestQueue) {
 
       // Enforce strict FIFO serialization through RequestQueue to prevent Pi 5 OOM
       const result = await queue.enqueue(async () => {
+        const activeModel = agentOptions.model || (manager?.getCurrentModel ? manager.getCurrentModel() : 'qwen2.5:1.5b');
         return runAgent({
           message: message.trim(),
           conversationHistory: history,
           sessionId: effectiveSessionId,
-          options: agentOptions
+          options: {
+            ...agentOptions,
+            model: activeModel
+          }
         });
       });
 
@@ -132,12 +169,14 @@ export function createApp(agentOptions = {}, queue = requestQueue) {
 
     try {
       await queue.enqueue(async () => {
+        const activeModel = agentOptions.model || (manager?.getCurrentModel ? manager.getCurrentModel() : 'qwen2.5:1.5b');
         const result = await runAgent({
           message: message.trim(),
           conversationHistory: history,
           sessionId: effectiveSessionId,
           options: {
             ...agentOptions,
+            model: activeModel,
             onStatus: (st) => sendSSE('status', st),
             onToken: (tok) => sendSSE('token', { token: tok })
           }
