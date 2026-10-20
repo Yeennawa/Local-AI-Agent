@@ -6,7 +6,8 @@ import { githubTool } from './github.js';
 import { newsTool } from './news.js';
 import { weatherTool } from './weather.js';
 import { fxTool } from './fx.js';
-import { webSearchTool } from './webSearch.js';
+import { tavilyTool } from './tavily.js';
+import { duckDuckGoTool } from './duckduckgo.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 5000;
 
@@ -22,9 +23,9 @@ export class ToolRegistry {
     this.registerTool(newsTool);
     this.registerTool(weatherTool);
     this.registerTool(fxTool);
-    this.registerTool(webSearchTool);
+    this.registerTool(tavilyTool);
+    this.registerTool(duckDuckGoTool);
   }
-
 
   registerTool(tool) {
     if (!tool || !tool.name || typeof tool.execute !== 'function') {

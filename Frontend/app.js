@@ -56,11 +56,17 @@ async function handleSubmit(event) {
         onStatus: function (statusData) {
           if (statusData.status === "using_tool") {
             const toolLabels = {
+              tavily_search: "กำลังค้นหาข้อมูลด้วย Tavily...",
+              duckduckgo_search: "กำลังค้นหาข้อมูลด้วย DuckDuckGo...",
+              search_web: "กำลังค้นหาข้อมูลจากเว็บ...",
               search_wikipedia: "กำลังค้นหา Wikipedia...",
               calculate: "กำลังคำนวณตัวเลข...",
               search_github: "กำลังค้นหา GitHub...",
               get_system_info: "กำลังตรวจสอบสถานะเครื่อง...",
-              get_current_time: "กำลังตรวจสอบเวลา..."
+              get_current_time: "กำลังตรวจสอบเวลา...",
+              get_weather: "กำลังตรวจสอบสภาพอากาศ...",
+              get_news: "กำลังดึงข้อมูลข่าวสาร...",
+              get_fx: "กำลังตรวจสอบอัตราแลกเปลี่ยน..."
             };
             thinkingBubble.textContent = toolLabels[statusData.tool] || `กำลังเรียกใช้ ${statusData.tool}...`;
           } else if (statusData.status === "synthesizing") {

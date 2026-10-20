@@ -90,6 +90,12 @@ function describeOutcome(execResult) {
   }
 
   const res = execResult.result;
+  if (execResult.tool === 'tavily_search' && res?.found && res?.summary) {
+    return `[ข้อมูลอ้างอิงจาก Tavily Search]: ${res.summary}`;
+  }
+  if (execResult.tool === 'duckduckgo_search' && res?.found && res?.summary) {
+    return `[ข้อมูลอ้างอิงจาก DuckDuckGo]: ${res.summary}`;
+  }
   if (execResult.tool === 'search_wikipedia' && res?.found && res?.summary) {
     return `[ข้อมูลอ้างอิงจาก Wikipedia เรื่อง "${res.title || ''}"]: ${res.summary}`;
   }
@@ -339,12 +345,13 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       }
 
       // Fallback: If no tools were invoked and no tool attempts were made, but query has clear knowledge intent,
-      // attempt a single fallback retrieval with search_wikipedia before giving up to synthesis.
-      if (observations.length === 0 && toolsUsed.length === 0 && toolRegistry.hasTool('search_wikipedia')) {
+      // attempt a single fallback retrieval with search_web (Tavily -> DDG -> Wiki) before giving up to synthesis.
+      if (observations.length === 0 && toolsUsed.length === 0 && toolRegistry.hasTool('search_web')) {
         const norm = normalizeQuery(message, { focusEntity });
-        if (norm.isKnowledgeIntent && norm.canonicalTopic) {
-          onStatus?.({ status: 'using_tool', tool: 'search_wikipedia', params: { topic: norm.canonicalTopic } });
-          const execResult = await toolRegistry.executeTool('search_wikipedia', { topic: norm.canonicalTopic });
+        if (norm.isKnowledgeIntent && (norm.canonicalTopic || message)) {
+          const targetQuery = norm.canonicalTopic || message;
+          onStatus?.({ status: 'using_tool', tool: 'search_web', params: { query: targetQuery } });
+          const execResult = await toolRegistry.executeTool('search_web', { query: targetQuery });
           toolsUsed.push(execResult);
           observations.push(describeOutcome(execResult));
           if (execResult.success && execResult.result?.found === false && execResult.result.message) {
@@ -364,7 +371,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       ? parsed.text.trim()
       : extractIncompleteText(raw).trim();
 
-    const referenceSummary = toolsUsed.find((t) => t.tool === 'search_web' || t.tool === 'search_wikipedia')?.result?.summary || '';
+    const referenceSummary = toolsUsed.find((t) => t.tool === 'tavily_search' || t.tool === 'duckduckgo_search' || t.tool === 'search_web' || t.tool === 'search_wikipedia')?.result?.summary || '';
     const cleanedText = sanitizeAnswerText(candidateText, message, referenceSummary);
     const finalText = cleanedText ? clip(cleanedText, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
@@ -386,7 +393,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
     }
 
     // Save verified answer to Note Memory Ledger
-    const verifiedTool = toolsUsed.find((t) => t.success && (t.tool === 'search_web' || t.tool === 'search_wikipedia' || t.tool === 'calculate'));
+    const verifiedTool = toolsUsed.find((t) => t.success && (t.tool === 'tavily_search' || t.tool === 'duckduckgo_search' || t.tool === 'search_web' || t.tool === 'search_wikipedia' || t.tool === 'calculate'));
     if (verifiedTool && finalText && !finalText.includes('ขออภัย') && !finalText.includes('ไม่พบข้อมูล')) {
       sessionMemory.noteLedger.saveNote({
         sessionId: effectiveSessionId || 'global',

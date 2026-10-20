@@ -202,19 +202,42 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   // 2. Conflict Rule: Person / Entity / Office-holder questions
-  // Questions containing "ใคร" or government/leadership roles must NEVER be routed to time tool,
-  // even if they contain temporal words like "ตอนนี้", "ปัจจุบัน", "now", "currently".
+  const isExplicitWiki = /(?:วิกิ|wikipedia)/i.test(raw);
+  const isExplicitDDG = /(?:duckduckgo|ddg|ดั๊ก)/i.test(raw);
+  const isExplicitTavily = /(?:tavily|ทาวิ)/i.test(raw);
   const hasPersonOrOfficeRole = /(?:ใคร|ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who|who is|prime minister|president)/i.test(raw);
   if (hasPersonOrOfficeRole) {
-    const topic = extractTopic(raw, focusEntity) || (raw.includes('นายก') ? 'นายกรัฐมนตรีไทย' : raw);
+    if (isExplicitWiki) {
+      const topic = extractTopic(raw, focusEntity) || (raw.includes('นายก') ? 'นายกรัฐมนตรีไทย' : raw);
+      return {
+        intent: 'tool',
+        toolCall: {
+          name: 'search_wikipedia',
+          params: { topic }
+        },
+        confidence: 'high',
+        reason: 'explicit_person_wikipedia'
+      };
+    }
+    if (isExplicitDDG) {
+      return {
+        intent: 'tool',
+        toolCall: {
+          name: 'duckduckgo_search',
+          params: { query: raw }
+        },
+        confidence: 'high',
+        reason: 'explicit_duckduckgo_search'
+      };
+    }
     return {
       intent: 'tool',
       toolCall: {
-        name: 'search_wikipedia',
-        params: { topic }
+        name: 'tavily_search',
+        params: { query: raw }
       },
       confidence: 'high',
-      reason: 'person_entity_knowledge'
+      reason: 'person_office_tavily_search'
     };
   }
 
@@ -283,26 +306,8 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     }
   }
 
-  // 7. Practical & Everyday Life Queries (Web Search)
-  const isExplicitWiki = /(?:วิกิ|wikipedia|คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์)/i.test(raw);
-  if (norm.isPracticalQuery && !isExplicitWiki) {
-    const query = norm.searchCandidates[0] || raw;
-    return {
-      intent: 'tool',
-      toolCall: {
-        name: 'search_web',
-        params: { query }
-      },
-      confidence: 'high',
-      reason: 'practical_web_search'
-    };
-  }
-
-
-  // 8. Knowledge & Conceptual Questions (Wikipedia)
-  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
-
-  if (isKnowledgePattern || norm.isKnowledgeIntent || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
+  // 7. Explicit Provider Queries
+  if (isExplicitWiki) {
     const topic = norm.canonicalTopic || extractTopic(raw, focusEntity) || raw;
     if (topic && topic.length >= 2) {
       return {
@@ -312,9 +317,51 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
           params: { topic }
         },
         confidence: 'high',
-        reason: norm.isBareNoun ? 'bare_noun_knowledge' : 'knowledge_lookup'
+        reason: 'explicit_wikipedia_lookup'
       };
     }
+  }
+
+  if (isExplicitDDG) {
+    const query = norm.searchCandidates[0] || raw;
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'duckduckgo_search',
+        params: { query }
+      },
+      confidence: 'high',
+      reason: 'explicit_duckduckgo_search'
+    };
+  }
+
+  if (isExplicitTavily) {
+    const query = norm.searchCandidates[0] || raw;
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'tavily_search',
+        params: { query }
+      },
+      confidence: 'high',
+      reason: 'explicit_tavily_search'
+    };
+  }
+
+  // 8. General Knowledge & Search Queries (Default: Tavily for accuracy and freshness)
+  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
+
+  if (isKnowledgePattern || norm.isKnowledgeIntent || norm.isPracticalQuery || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
+    const query = norm.searchCandidates[0] || raw;
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'tavily_search',
+        params: { query }
+      },
+      confidence: 'high',
+      reason: 'default_knowledge_tavily'
+    };
   }
 
   // 9. Ambiguous / Complex request requiring LLM reasoning
