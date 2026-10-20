@@ -123,7 +123,13 @@ export function formatCleanContext(toolName, result) {
   }
 
   if (toolName === 'search_web' && result.found && result.summary) {
-    const cleanSummary = cleanExtractiveText(result.summary);
+    let cleanSummary = cleanExtractiveText(result.summary);
+    cleanSummary = cleanSummary
+      .replace(/\d{1,2}\s+(?:ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)\s+\d{4}/g, '')
+      .replace(/(?:Bright TV|ไทยรัฐ|เดลินิวส์|มติชน|sanook|kapook)\s*(?:News|ออนไลน์)?/gi, '')
+      .replace(/\.{3,}/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
     return `ข้อมูลที่พบ:\n${cleanSummary}`;
   }
 
@@ -152,6 +158,9 @@ export function polishAnswerText(text, userMessage = '', referenceText = '') {
 
   // 3. Polarity & Warning Guard (safety.js)
   if (referenceText && isFalselyPositiveAnswer(cleaned, referenceText)) {
+    if (/\[แหล่ง/i.test(referenceText) || /Bright TV|News|https?:/i.test(referenceText)) {
+      return 'จากข้อมูลอ้างอิงระบุว่าสิ่งนี้อาจเป็นอันตราย มีพิษ หรือมีข้อห้ามตามกฎหมาย จึงไม่ควรรับประทานหรือกระทำครับ';
+    }
     return cleanExtractiveText(referenceText);
   }
 
@@ -182,4 +191,36 @@ export function polishAnswerText(text, userMessage = '', referenceText = '') {
   }
 
   return cleaned.trim();
+}
+
+
+/**
+ * Extractive Span Grounding:
+ * Locks and verifies official proper nouns (e.g. office-holder names)
+ * directly against authoritative reference text (Wikipedia) to prevent
+ * small models (1.5B) from corrupting complex Thai surnames during generation.
+ */
+export function verifyAndGroundAnswer(answerText, userMessage = '', referenceText = '') {
+  if (typeof answerText !== 'string' || !answerText.trim() || !referenceText) {
+    return answerText;
+  }
+
+  let grounded = answerText;
+
+  // 1. Office-holder extraction: e.g. "ผู้ดำรงตำแหน่งคนปัจจุบันคือ อนุทิน ชาญวีรกูล"
+  const officeMatch = referenceText.match(/ผู้ดำรงตำแหน่งคนปัจจุบันคือ\s+([ก-๙a-zA-Z]+(?:\s+[ก-๙a-zA-Z]+)?)/);
+  if (officeMatch && officeMatch[1]) {
+    const officialName = officeMatch[1].trim();
+    const parts = officialName.split(/\s+/);
+    const firstName = parts[0];
+    if (firstName && grounded.includes(firstName)) {
+      const corruptedRegex = new RegExp(`(?:นาย)?${firstName}\\s+[ก-๙a-zA-Z]+`, 'g');
+      grounded = grounded.replace(corruptedRegex, (match) => {
+        const hasTitle = match.startsWith('นาย');
+        return hasTitle ? `นาย${officialName}` : officialName;
+      });
+    }
+  }
+
+  return grounded;
 }

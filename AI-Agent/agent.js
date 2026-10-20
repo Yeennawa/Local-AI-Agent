@@ -10,8 +10,10 @@ import {
   composeStructuredAnswer,
   formatCleanContext,
   polishAnswerText,
+  verifyAndGroundAnswer,
   SYSTEM_ASSISTANT_PROMPT
 } from './answer.js';
+import { getSafetyKnowledgeHint } from './safety.js';
 
 const MAX_PLAIN_REPLY_CHARS = 600;
 const ANSWER_TOKENS = 256;
@@ -29,7 +31,8 @@ export function sanitizeAnswerText(text, userMessage = '', defaultSummary = '') 
 }
 
 async function synthesizeAnswer({ model, chatFn, history, message, cleanContext, personaPrompt, onToken }) {
-  let systemContent = SYSTEM_ASSISTANT_PROMPT;
+  const activeLabel = /3b/i.test(model) ? 'Qwen2.5 3B (Advanced Mode)' : 'Qwen2.5 1.5B (Lite Mode)';
+  let systemContent = `คุณคือ Max ผู้ช่วย AI บน Raspberry Pi (ขณะนี้ทำงานด้วยโมเดล ${activeLabel})\n${SYSTEM_ASSISTANT_PROMPT}`;
   if (personaPrompt) {
     systemContent = `${personaPrompt}\n\n${systemContent}`;
   }
@@ -161,7 +164,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
 
     if (route) {
       if (route.intent === 'direct') {
-        const text = buildDirectReply(route.reason, toolRegistry.getAllTools());
+        const text = buildDirectReply(route.reason, toolRegistry.getAllTools(), model, effectiveMessage);
         if (text) return replyWithoutModel(text, { feeling: 'happy' });
       }
       if (route.intent === 'joke') {
@@ -204,6 +207,11 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
     }
 
     // 4. LLM Synthesis
+    const safetyHint = getSafetyKnowledgeHint(effectiveMessage);
+    if (safetyHint) {
+      cleanContext = cleanContext ? `${cleanContext}\n\n${safetyHint}` : safetyHint;
+    }
+
     onStatus?.({ status: 'synthesizing' });
     const synthesized = await synthesizeAnswer({
       model,
@@ -224,7 +232,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       : extractIncompleteText(raw).trim();
 
     const polished = polishAnswerText(candidateText, effectiveMessage, referenceText);
-    const finalText = polished ? clip(polished, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
+    const grounded = verifyAndGroundAnswer(polished, effectiveMessage, referenceText);
+    const finalText = grounded ? clip(grounded, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
 
     const topicEntity = toolsUsed[0]?.params?.topic ||

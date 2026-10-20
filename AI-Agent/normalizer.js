@@ -402,6 +402,8 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
   const SUBJECTIVE_OR_QUESTION_REGEX = /(?:ชอบ|คิดว่า|รู้สึก|เห็นด้วย|ดีกว่า|มากกว่า|แนะนำ|คิดเห็น|อะไร|ทำไม|อย่างไร|ยังไง|ไหน|หรือเปล่า|หรือไม่|หรือยัง|มั้ย|ไหม|เท่าไหร่|เท่าใด|กี่)/i;
   const ACTION_VERB_REGEX = /^(?:ยิง|เปิด|ปิด|ลบ|ส่ง|สร้าง|ทำลาย|โจมตี|เล่น|รัน|start\b|stop\b|launch\b|shoot\b|fire\b)/i;
 
+  const CONVERSATIONAL_OR_FEEDBACK_REGEX = /(?:เขียน|สะกด|พิมพ์|ตอบ|บอก|พูด|ผิด|ถูก|มั่ว|เพี้ยน|ไม่ใช่|ไม่จริง|เข้าใจ|หมายความ|ขอบคุณ|ขอโทษ|เก่ง|เยี่ยม|ดีมาก|แย่|งง|สับสน|ลองใหม่|เอาใหม่|อีกที|ใช่ไหม|ใช่ป่ะ|หรือเปล่า|หรอ|เหรอ|ทำไม|ยังไง|ได้ไหม|ได้มั้ย|สามารถ|คนกิน|กินได้|กินได้ไหม|กินอะไร)/i;
+
   const isGreeting = GREETINGS_REGEX.test(cleaned);
   const isBareNoun = Boolean(
     !isGreeting &&
@@ -412,14 +414,21 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
     !actionPredicate &&
     !SUBJECTIVE_OR_QUESTION_REGEX.test(cleaned) &&
     !ACTION_VERB_REGEX.test(cleaned) &&
+    !CONVERSATIONAL_OR_FEEDBACK_REGEX.test(cleaned) &&
+    !CONVERSATIONAL_OR_FEEDBACK_REGEX.test(raw) &&
     cleaned.split(/\s+/).length <= 2 &&
     cleaned.length >= 2 &&
-    cleaned.length <= 30 &&
+    cleaned.length <= 25 &&
     !/[?.,!]/.test(raw)
   );
 
+  const ADVISORY_OR_CREATIVE_REGEX = /(?:แนะนำ|ช่วยคิด|ช่วยหาไอเดีย|ไอเดีย|สอน|วิธี|ทำยังไง|ทำอย่างไร|ตั้งชื่อ|แต่ง|เขียน|เปรียบเทียบ|โค้ด|syntax|error|แก้ยังไง)/i;
+  const isAdvisoryOrCreative = ADVISORY_OR_CREATIVE_REGEX.test(raw);
+
   const isKnowledgeIntent = Boolean(
     !isGreeting &&
+    !isAdvisoryOrCreative &&
+    !CONVERSATIONAL_OR_FEEDBACK_REGEX.test(raw) &&
     canonicalTopic &&
     canonicalTopic.length >= 2 &&
     (isBareNoun || matchedLeading || matchedTrailing || hadAbbr || relationRole || isYesNoOrPractical || focusKeywords.length > 0 || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))

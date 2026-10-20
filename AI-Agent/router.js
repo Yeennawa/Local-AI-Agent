@@ -157,7 +157,32 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
 
   const raw = message.trim();
 
-  // 1. Pure Greetings and Polite Chit-chat
+  // 1. Model Self-Awareness & Active LLM Inquiry (Tier 1 Adaptive RAG)
+  const isModelIdentityQuery = /^(?:แล้ว)?(?:คุณ|เธอ|ตัวเอง)?\s*(?:คือ\s*ใคร|ชื่อ\s*อะไร|เป็น\s*ใคร|model|โมเดล|llm|qwen|โหมด\s*ไหน|รุ่น\s*ไหน)/i.test(raw) ||
+    /(?:ตอนนี้|ปัจจุบัน).*(?:คุณ|เธอ|ตัวเอง|บอท).*(?:คือ|ใช้|รัน).*(?:model|โมเดล|llm|ตัวไหน|อะไร|โหมดไหน)/i.test(raw) ||
+    /^(?:แล้ว)?(?:คุณ|เธอ|ตัวเอง)?\s*(?:ใช่|ใช้)\s*(?:ของ\s*)?(?:model|โมเดล|llm|qwen|1\.5b|3b)/i.test(raw);
+  if (isModelIdentityQuery) {
+    return {
+      intent: 'direct',
+      toolCall: null,
+      confidence: 'high',
+      reason: 'model_identity'
+    };
+  }
+
+  // 2. Conversational Feedback, Corrections & Pushback (Tier 1 Adaptive RAG)
+  const isFeedbackOrCorrection = /(?:เขียน|สะกด|พิมพ์|ตอบ|บอก|ชื่อ).*(?:ผิด|มั่ว|เพี้ยน|ไม่ถูก)/i.test(raw) ||
+    /^(?:ผิดแล้ว|ไม่ใช่(?:นะ|ครับ|ค่ะ)?|มั่วแล้ว|ตอบใหม่|เอาใหม่|พูดใหม่|อธิบายเพิ่ม|สรุปสั้นๆ|แปลเป็น|จริงหรอ|แน่ใจนะ)/i.test(raw);
+  if (isFeedbackOrCorrection) {
+    return {
+      intent: 'finish',
+      toolCall: null,
+      confidence: 'high',
+      reason: 'conversational_feedback'
+    };
+  }
+
+  // 3. Pure Greetings and Polite Chit-chat
   const isGreeting = /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|hello(?:\s+there)?|hi(?:\s+there)?|hey|good\s+(?:morning|evening|afternoon)|สบายดีไหม|เป็นไงบ้าง|เป็นอย่างไรบ้าง|ขอบคุณ(?:มาก)?(?:นะ)?(?:ครับ|ค่ะ)?|thanks(?:\s+a\s+lot)?|thank\s+you|บาย(?:ครับ|ค่ะ|นะ)?|ลาก่อน(?:ครับ|ค่ะ|นะ)?|bye|goodbye)\s*$/i.test(raw) ||
     /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล)\s*(?:แนะนำตัว|ช่วยแนะนำตัว|ทักทาย)/i.test(raw);
   if (isGreeting) {
@@ -324,7 +349,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   // 15. Person / Office-holder Questions (Wikipedia)
-  const hasPersonOrOfficeRole = !isSportsQuery && /(?:ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|เกิด(?:ปี|เมื่อ|ที่)|เสียชีวิต|ตายเมื่อ|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who is|prime minister|president)/i.test(raw);
+  const hasPersonOrOfficeRole = !isSportsQuery && !isModelIdentityQuery && /(?:ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|เกิด(?:ปี|เมื่อ|ที่)|เสียชีวิต|ตายเมื่อ|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who is|prime minister|president)/i.test(raw);
   if (hasPersonOrOfficeRole) {
     const topic = extractTopic(raw, focusEntity) || (raw.includes('นายก') ? 'นายกรัฐมนตรีไทย' : raw);
     return {
@@ -335,26 +360,23 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     };
   }
 
-  // 16. Practical & Everyday Life Queries, How-To, Comparisons, Coding, Advice (Web Search)
-  const isExplicitWiki = /(?:วิกิ|wikipedia|ชีวประวัติ)/i.test(raw);
-  const isDefinitionQuery = /(?:คืออะไร|คือใคร|ความหมายของ|ประวัติ\s+)/i.test(raw);
-  const isPracticalOrHowTo = !isDefinitionQuery && (norm.isPracticalQuery ||
-    /(?:ทำยังไง|ทำไง|อย่างไร|วิธี|แก้อย่างไร|แก้ยังไง|ทำไม|เปรียบเทียบ|ต่างกันยังไง|ต่างกันอย่างไร|ดีกว่ากันยังไง|รุ่นไหนดี|อันไหนดี|ที่ไหนดี|เที่ยว|ช่วงไหนดี|เดือนไหนดี|ดีสุด|ดีที่สุด|แนะนำ(?:เมนู|หนัง|เพลง|ร้าน|ที่เที่ยว|วิธี)?|เขียน.*ยังไง|โค้ด|for loop|while loop|function|syntax|error)/i.test(raw));
-
-  if (isPracticalOrHowTo && !isExplicitWiki) {
+  // 16. Explicit Web Search Intent (Adaptive RAG)
+  const isExplicitWebSearch = /(?:ค้นเว็บ|เสิร์ชเว็บ|หาในเน็ต|ค้นหาในเว็บ|search\s*web)/i.test(raw);
+  if (isExplicitWebSearch) {
     const query = norm.searchCandidates[0] || raw;
     return {
       intent: 'tool',
       toolCall: { name: 'search_web', params: { query } },
       confidence: 'high',
-      reason: 'practical_web_search'
+      reason: 'explicit_web_search'
     };
   }
 
   // 17. Knowledge & Conceptual Questions (Wikipedia)
-  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
+  const isAdvisoryOrCreative = /(?:แนะนำ|ช่วยคิด|ไอเดีย|สอน|วิธี|ทำยังไง|ทำอย่างไร|ตั้งชื่อ|แต่ง|เขียน|เปรียบเทียบ|โค้ด|syntax)/i.test(raw);
+  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ข้อมูลเกี่ยวกับ|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบายเรื่อง|อธิบายเรื่อง|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|แห่ง))/i.test(raw);
 
-  if (isKnowledgePattern || norm.isKnowledgeIntent || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
+  if (!isFeedbackOrCorrection && !isAdvisoryOrCreative && (isKnowledgePattern || (norm.isKnowledgeIntent && !norm.isYesNoOrPractical) || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))) {
     const topic = norm.canonicalTopic || extractTopic(raw, focusEntity) || raw;
     if (topic && topic.length >= 2) {
       return {
@@ -366,17 +388,7 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     }
   }
 
-  // 18. Default Deterministic Policy: questions to web search, general chat to finish
-  const hasQuestionMarker = /(?:ไหม|มั้ย|หรือ|อะไร|ใคร|ที่ไหน|เมื่อไหร่|อย่างไร|ทำไม|เท่าไหร่|กี่|\?)/i.test(raw);
-  if (hasQuestionMarker) {
-    return {
-      intent: 'tool',
-      toolCall: { name: 'search_web', params: { query: raw } },
-      confidence: 'high',
-      reason: 'default_web_query'
-    };
-  }
-
+  // 18. Adaptive RAG Fallthrough: General QA, common sense, advice, coding, and chat go directly to LLM
   return {
     intent: 'finish',
     toolCall: null,
