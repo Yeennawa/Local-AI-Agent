@@ -125,11 +125,15 @@ export class ToolRegistry {
       return fail(error.message);
     }
 
+    const effectiveTimeoutMs = typeof tool.timeoutMs === 'number' && tool.timeoutMs > 0
+      ? tool.timeoutMs
+      : this.toolTimeoutMs;
+
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`Tool "${name}" timed out after ${this.toolTimeoutMs}ms`)),
-        this.toolTimeoutMs
+        () => reject(new Error(`Tool "${name}" timed out after ${effectiveTimeoutMs}ms`)),
+        effectiveTimeoutMs
       );
     });
 
