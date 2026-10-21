@@ -35,3 +35,14 @@ Guidelines and architectural patterns for building resilient, low-latency AI age
 ### 6. Probe-First Development (Feedback Loops)
 - Always write failing probe tests first (`tdd` Red-Green-Refactor) covering real user failure modes before modifying routing or synthesis logic.
 - Verify with both `node --test` and `node tests/eval/runner.js`.
+
+### 7. Tool Mode Policy Seam & Single Search Facade Pattern
+- **Avoid Tool Sprawl on Sub-4B Models:**
+  - Registering separate tools for each search provider (e.g. `tavily_search`, `duckduckgo_search`, `web_search`) inflates tool definition tokens in the system prompt and confuses the router/LLM on sub-4B models.
+  - **Pattern (Single Facade):** Register one unified `search_web` tool in `toolRegistry`. Encapsulate provider switching (`TavilyProvider` -> `DuckDuckGoProvider` -> `WikipediaSnippet`) internally within the tool.
+  - When optional keys (`TAVILY_API_KEY`) are omitted, seamlessly fallback to zero-key scrapers and attach structured notices (`tavily_key_missing`) without breaking the user experience.
+- **Pure Functional Policy Seam (`toolMode.js`):**
+  - Keep the deterministic router (`router.js`) pure and decouple user-selected modes (`auto`, `chat`, `search`) into a post-routing policy function: `applyToolModePolicy(route, { toolMode, message })`.
+  - `auto`: Strictly preserves Adaptive RAG tiering.
+  - `chat`: Suppresses noisy external search tools to conserve context tokens and latency, while preserving fast in-device local tools (`time`, `systemInfo`, `calculate`, `weather`, `fx`).
+  - `search`: Boosts general knowledge queries to live web retrieval while preserving meta/greeting turns.
