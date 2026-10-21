@@ -6,6 +6,8 @@ import { runAgent } from './agent.js';
 import { sessionMemory } from './memory.js';
 import { RequestQueue, requestQueue } from './queue.js';
 import { ModelManager, modelManager } from './modelManager.js';
+import { TOOL_MODES, normalizeToolMode } from './toolMode.js';
+import { isTavilyConfigured } from './tools/search/tavily.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,10 +80,19 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
     }
   });
 
+  // Tool Modes and Provider status endpoint
+  app.get('/api/tools/status', (_req, res) => {
+    return res.json({
+      modes: TOOL_MODES,
+      tavilyConfigured: isTavilyConfigured()
+    });
+  });
+
   app.post('/api/chat', async (req, res) => {
     try {
-      const { message, conversationHistory, sessionId } = req.body || {};
+      const { message, conversationHistory, sessionId, toolMode } = req.body || {};
       const effectiveSessionId = sessionId || req.headers['x-session-id'] || null;
+      const activeToolMode = normalizeToolMode(toolMode || req.headers['x-tool-mode'] || agentOptions.toolMode);
 
       if (typeof message !== 'string' || !message.trim()) {
         return res.status(400).json({
@@ -89,6 +100,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
           status: 'error',
           feeling: 'confused',
           toolsUsed: [],
+          notice: null,
           error: 'Message must be a non-empty string'
         });
       }
@@ -104,7 +116,8 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
           sessionId: effectiveSessionId,
           options: {
             ...agentOptions,
-            model: activeModel
+            model: activeModel,
+            toolMode: activeToolMode
           }
         });
       });
@@ -121,6 +134,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
           status: 'error',
           feeling: 'confused',
           toolsUsed: [],
+          notice: null,
           error: error.message || 'Server busy: Queue is full'
         });
       }
@@ -132,6 +146,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
         status: 'error',
         feeling: 'confused',
         toolsUsed: [],
+        notice: null,
         error: error?.message || 'Internal server error'
       });
     }
@@ -139,8 +154,9 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
 
   // Server-Sent Events (SSE) streaming endpoint
   app.post('/api/chat/stream', async (req, res) => {
-    const { message, conversationHistory, sessionId } = req.body || {};
+    const { message, conversationHistory, sessionId, toolMode } = req.body || {};
     const effectiveSessionId = sessionId || req.headers['x-session-id'] || null;
+    const activeToolMode = normalizeToolMode(toolMode || req.headers['x-tool-mode'] || agentOptions.toolMode);
 
     if (typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({
@@ -148,6 +164,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
         status: 'error',
         feeling: 'confused',
         toolsUsed: [],
+        notice: null,
         error: 'Message must be a non-empty string'
       });
     }
@@ -177,6 +194,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
           options: {
             ...agentOptions,
             model: activeModel,
+            toolMode: activeToolMode,
             onStatus: (st) => sendSSE('status', st),
             onToken: (tok) => sendSSE('token', { token: tok })
           }
@@ -196,6 +214,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
           status: 'error',
           feeling: 'confused',
           toolsUsed: [],
+          notice: null,
           error: error.message || 'Server busy: Queue is full'
         });
       } else {
@@ -205,6 +224,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
           status: 'error',
           feeling: 'confused',
           toolsUsed: [],
+          notice: null,
           error: error?.message || 'Internal server error'
         });
       }
@@ -236,6 +256,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
         status: 'error',
         feeling: 'confused',
         toolsUsed: [],
+        notice: null,
         error: 'Request entity too large'
       });
     }

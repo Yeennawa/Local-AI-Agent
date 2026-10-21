@@ -14,6 +14,7 @@ import {
   SYSTEM_ASSISTANT_PROMPT
 } from './answer.js';
 import { getSafetyKnowledgeHint } from './safety.js';
+import { applyToolModePolicy, normalizeToolMode } from './toolMode.js';
 
 const MAX_PLAIN_REPLY_CHARS = 600;
 const ANSWER_TOKENS = 256;
@@ -71,6 +72,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const effectiveSessionId = sessionId || options.sessionId || null;
   const onStatus = typeof options.onStatus === 'function' ? options.onStatus : null;
   const onToken = typeof options.onToken === 'function' ? options.onToken : null;
+  const toolMode = normalizeToolMode(options.toolMode);
 
   // 1. Zero-Token Lexical Meta-Recall (e.g. "คำถามแรกคืออะไร")
   if (effectiveSessionId) {
@@ -88,6 +90,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         status: 'idle',
         feeling: 'happy',
         toolsUsed: [],
+        notice: null,
         error: null
       };
     }
@@ -110,6 +113,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       status: 'idle',
       feeling: 'happy',
       toolsUsed: cachedNote.sourceTool ? [{ tool: cachedNote.sourceTool, params: {}, result: { fromNote: true }, durationMs: 0 }] : [],
+      notice: null,
       error: null
     };
   }
@@ -140,6 +144,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
 
   // Deterministic answers: record turn, stream text, zero model tokens
   const replyWithoutModel = (text, { feeling = 'neutral', focusEntity: focus } = {}) => {
+    const activeNotice = toolsUsed.find((t) => t.result?.notice)?.result?.notice || null;
     if (effectiveSessionId) {
       sessionMemory.recordTurn(effectiveSessionId, {
         userQuery: message,
@@ -149,14 +154,15 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       });
     }
     onToken?.(text);
-    return { text, status: 'idle', feeling, toolsUsed, error: null };
+    return { text, status: 'idle', feeling, toolsUsed, notice: activeNotice, error: null };
   };
 
   try {
     const useRouter = options.useRouter !== undefined ? options.useRouter : true;
-    const route = useRouter
+    const rawRoute = useRouter
       ? routeIntent({ message: effectiveMessage, history, focusEntity: resolved.targetEntity || focusEntity })
       : { intent: 'finish', confidence: 'high' };
+    const route = applyToolModePolicy(rawRoute, { toolMode, message: effectiveMessage });
 
     let personaPrompt = null;
     let cleanContext = '';
@@ -185,6 +191,14 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
           onStatus?.({ status: 'using_tool', tool: name, params: route.toolCall.params, label: toolLabel });
           const execResult = await toolRegistry.executeTool(name, route.toolCall.params);
           toolsUsed.push(execResult);
+
+          if (execResult.success && execResult.result?.notice) {
+            onStatus?.({
+              status: 'notice',
+              code: execResult.result.notice.code,
+              message: execResult.result.notice.message
+            });
+          }
 
           if (execResult.success && execResult.result?.found === false && execResult.result.message) {
             return replyWithoutModel(execResult.result.message);
@@ -265,11 +279,14 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       });
     }
 
+    const activeNotice = toolsUsed.find((t) => t.result?.notice)?.result?.notice || null;
+
     return {
       text: finalText,
       status: 'idle',
       feeling: normalizeFeeling(parsed?.feeling, defaultFeeling),
       toolsUsed,
+      notice: activeNotice,
       error: null,
       meta: meta || undefined
     };
@@ -279,6 +296,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       status: 'error',
       feeling: 'confused',
       toolsUsed,
+      notice: null,
       error: error.message || 'Unknown agent error'
     };
   }
