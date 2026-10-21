@@ -52,13 +52,27 @@
           <p>พร้อมช่วยตอบคำถาม</p>
         </div>
 
-        <div class="model-switcher" id="model-switcher" role="group" aria-label="เลือกโหมดโมเดล AI">
-          <button type="button" class="mode-button active" data-mode="lite" id="mode-lite-btn" title="โหมดประหยัด RAM (1.5B)">
-            Lite (1.5B)
-          </button>
-          <button type="button" class="mode-button" data-mode="advanced" id="mode-advanced-btn" title="โหมดประสิทธิภาพสูง (3B)">
-            Adv (3B)
-          </button>
+        <div class="controls-cluster">
+          <div class="model-switcher" id="model-switcher" role="group" aria-label="เลือกโหมดโมเดล AI">
+            <button type="button" class="mode-button active" data-mode="lite" id="mode-lite-btn" title="โหมดประหยัด RAM (1.5B)">
+              Lite (1.5B)
+            </button>
+            <button type="button" class="mode-button" data-mode="advanced" id="mode-advanced-btn" title="โหมดประสิทธิภาพสูง (3B)">
+              Adv (3B)
+            </button>
+          </div>
+
+          <div class="tool-mode-switcher" id="tool-mode-switcher" role="group" aria-label="เลือกโหมดเครื่องมือและการค้นหา">
+            <button type="button" class="tool-mode-button active" data-tool-mode="auto" id="tool-mode-auto-btn" title="โหมดอัตโนมัติ (Adaptive RAG เลือกให้ตามความเหมาะสม)">
+              ออโต้
+            </button>
+            <button type="button" class="tool-mode-button" data-tool-mode="chat" id="tool-mode-chat-btn" title="โหมดคุยอย่างเดียว (ไม่ค้นหาภายนอก เร็วที่สุด)">
+              คุยล้วน
+            </button>
+            <button type="button" class="tool-mode-button" data-tool-mode="search" id="tool-mode-search-btn" title="โหมดค้นหาเชิงลึก (ดึงข้อมูลล่าสุดจาก Tavily/DuckDuckGo)">
+              ค้นเว็บ
+            </button>
+          </div>
         </div>
 
         <button type="button" class="new-chat-button" id="new-chat-button">
@@ -69,6 +83,12 @@
           Lite Ready
         </span>
 
+      </div>
+
+      <div class="tool-notice-banner hidden" id="tool-notice-banner" role="status" aria-live="polite">
+        <span class="notice-icon" aria-hidden="true">i</span>
+        <span class="notice-text" id="notice-text"></span>
+        <button type="button" class="notice-close" id="notice-close" aria-label="ปิดการแจ้งเตือน">&times;</button>
       </div>
 
       <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>

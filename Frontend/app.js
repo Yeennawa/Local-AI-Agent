@@ -29,8 +29,86 @@ const modeLiteBtn = document.getElementById("mode-lite-btn");
 const modeAdvancedBtn = document.getElementById("mode-advanced-btn");
 const modelStatusBadge = document.getElementById("model-status-badge");
 
+const toolModeAutoBtn = document.getElementById("tool-mode-auto-btn");
+const toolModeChatBtn = document.getElementById("tool-mode-chat-btn");
+const toolModeSearchBtn = document.getElementById("tool-mode-search-btn");
+const toolNoticeBanner = document.getElementById("tool-notice-banner");
+const noticeText = document.getElementById("notice-text");
+const noticeClose = document.getElementById("notice-close");
+
 let currentModelMode = "lite";
 let isSwitchingModel = false;
+let currentToolMode = localStorage.getItem("ai_agent_tool_mode") || "auto";
+let noticeTimer = null;
+
+function showNoticeBanner(message) {
+  if (!toolNoticeBanner || !noticeText) return;
+  noticeText.textContent = message;
+  toolNoticeBanner.classList.remove("hidden");
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(function () {
+    hideNoticeBanner();
+  }, 7000);
+}
+
+function hideNoticeBanner() {
+  if (!toolNoticeBanner) return;
+  toolNoticeBanner.classList.add("hidden");
+  if (noticeTimer) clearTimeout(noticeTimer);
+}
+
+if (noticeClose) {
+  noticeClose.addEventListener("click", hideNoticeBanner);
+}
+
+function updateToolModeUI(mode) {
+  currentToolMode = mode;
+  localStorage.setItem("ai_agent_tool_mode", mode);
+  const buttons = [
+    { btn: toolModeAutoBtn, mode: "auto" },
+    { btn: toolModeChatBtn, mode: "chat" },
+    { btn: toolModeSearchBtn, mode: "search" }
+  ];
+  buttons.forEach(function (item) {
+    if (!item.btn) return;
+    if (item.mode === mode) {
+      item.btn.classList.add("active");
+    } else {
+      item.btn.classList.remove("active");
+    }
+  });
+}
+
+if (toolModeAutoBtn) {
+  toolModeAutoBtn.addEventListener("click", function () {
+    updateToolModeUI("auto");
+  });
+}
+if (toolModeChatBtn) {
+  toolModeChatBtn.addEventListener("click", function () {
+    updateToolModeUI("chat");
+  });
+}
+if (toolModeSearchBtn) {
+  toolModeSearchBtn.addEventListener("click", function () {
+    updateToolModeUI("search");
+    checkTavilyStatusOnSearch();
+  });
+}
+
+async function checkTavilyStatusOnSearch() {
+  try {
+    const res = await fetch("/api/tools/status");
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.tavilyConfigured === false && currentToolMode === "search") {
+        showNoticeBanner("ไม่พบ Tavily API Key จึงใช้งาน DuckDuckGo แทน");
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+}
 
 promptForm.addEventListener("submit", handleSubmit);
 if (newChatButton) {
@@ -129,6 +207,10 @@ async function handleModeSwitch(targetMode) {
 }
 
 initModelStatus();
+updateToolModeUI(currentToolMode);
+if (currentToolMode === "search") {
+  checkTavilyStatusOnSearch();
+}
 
 async function handleSubmit(event) {
   event.preventDefault();
@@ -153,7 +235,9 @@ async function handleSubmit(event) {
     } else if (USE_STREAMING && window.ReadableStream) {
       reply = await sendStreamMessageToBackend(prompt, {
         onStatus: function (statusData) {
-          if (statusData.status === "using_tool") {
+          if (statusData.status === "notice" && statusData.message) {
+            showNoticeBanner(statusData.message);
+          } else if (statusData.status === "using_tool") {
             const toolLabels = {
               search_wikipedia: "กำลังค้นหา Wikipedia...",
               search_web: "กำลังค้นหาข้อมูลจากเว็บ...",
@@ -193,6 +277,10 @@ async function handleSubmit(event) {
       reply = await sendMessageToBackend(prompt);
       thinkingBubble.remove();
       assistantBubble = appendBubble("assistant", reply.text);
+    }
+
+    if (reply?.notice?.message) {
+      showNoticeBanner(reply.notice.message);
     }
 
     // Attach permanent badge if tools were used or retrieved from memory
@@ -252,6 +340,7 @@ function handleNewChat() {
   history.length = 0;
   chatFeed.replaceChildren();
   setAvatarFeeling("neutral");
+  hideNoticeBanner();
   promptInput.focus();
 }
 
@@ -281,6 +370,7 @@ async function sendStreamMessageToBackend(prompt, { onStatus, onToken } = {}) {
       body: JSON.stringify({
         message: prompt,
         sessionId: currentSessionId,
+        toolMode: currentToolMode,
         conversationHistory: history.slice(-4)
       }),
       signal: controller.signal
@@ -360,10 +450,10 @@ async function sendMessageToBackend(prompt) {
       headers: {
         "Content-Type": "application/json"
       },
-      // Send sessionId for continuous session memory along with sliding history window
       body: JSON.stringify({
         message: prompt,
         sessionId: currentSessionId,
+        toolMode: currentToolMode,
         conversationHistory: history.slice(-4)
       }),
       signal: controller.signal
