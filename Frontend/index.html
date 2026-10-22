@@ -34,66 +34,162 @@
       </button>
     </form>
 
-    <section class="ai-panel" aria-live="polite">
+    <div class="workspace-layout" id="workspace-layout">
 
-      <div class="ai-profile">
+      <section class="ai-panel" aria-live="polite">
 
-        <div class="ai-character neutral" id="ai-character" aria-hidden="true">
-          <div class="character-antenna"></div>
+        <div class="ai-profile">
 
-          <div class="character-face">
-            <span class="character-eye"></span>
-            <span class="character-eye"></span>
-          </div>
-        </div>
+          <div class="ai-character neutral" id="ai-character" aria-hidden="true">
+            <div class="character-antenna"></div>
 
-        <div class="ai-information">
-          <h2>Local AI</h2>
-          <p>พร้อมช่วยตอบคำถาม</p>
-        </div>
-
-        <div class="controls-cluster">
-          <div class="model-switcher" id="model-switcher" role="group" aria-label="เลือกโหมดโมเดล AI">
-            <button type="button" class="mode-button active" data-mode="lite" id="mode-lite-btn" title="โหมดประหยัด RAM (1.5B)">
-              Lite (1.5B)
-            </button>
-            <button type="button" class="mode-button" data-mode="advanced" id="mode-advanced-btn" title="โหมดประสิทธิภาพสูง (3B)">
-              Adv (3B)
-            </button>
+            <div class="character-face">
+              <span class="character-eye"></span>
+              <span class="character-eye"></span>
+            </div>
           </div>
 
-          <div class="tool-mode-switcher" id="tool-mode-switcher" role="group" aria-label="เลือกโหมดเครื่องมือและการค้นหา">
-            <button type="button" class="tool-mode-button active" data-tool-mode="auto" id="tool-mode-auto-btn" title="โหมดอัตโนมัติ (Adaptive RAG เลือกให้ตามความเหมาะสม)">
-              ออโต้
-            </button>
-            <button type="button" class="tool-mode-button" data-tool-mode="chat" id="tool-mode-chat-btn" title="โหมดคุยอย่างเดียว (ไม่ค้นหาภายนอก เร็วที่สุด)">
-              คุยล้วน
-            </button>
-            <button type="button" class="tool-mode-button" data-tool-mode="search" id="tool-mode-search-btn" title="โหมดค้นหาเชิงลึก (ดึงข้อมูลล่าสุดจาก Tavily/DuckDuckGo)">
-              ค้นเว็บ
-            </button>
+          <div class="ai-information">
+            <h2>Local AI</h2>
+            <p>พร้อมช่วยตอบคำถาม</p>
           </div>
+
+          <div class="controls-cluster">
+            <div class="model-switcher" id="model-switcher" role="group" aria-label="เลือกโหมดโมเดล AI">
+              <button type="button" class="mode-button active" data-mode="lite" id="mode-lite-btn" title="โหมดประหยัด RAM (1.5B)">
+                Lite (1.5B)
+              </button>
+              <button type="button" class="mode-button" data-mode="advanced" id="mode-advanced-btn" title="โหมดประสิทธิภาพสูง (3B)">
+                Adv (3B)
+              </button>
+            </div>
+
+            <div class="tool-mode-switcher" id="tool-mode-switcher" role="group" aria-label="เลือกโหมดเครื่องมือและการค้นหา">
+              <button type="button" class="tool-mode-button active" data-tool-mode="auto" id="tool-mode-auto-btn" title="โหมดอัตโนมัติ (Adaptive RAG เลือกให้ตามความเหมาะสม)">
+                ออโต้
+              </button>
+              <button type="button" class="tool-mode-button" data-tool-mode="chat" id="tool-mode-chat-btn" title="โหมดคุยอย่างเดียว (ไม่ค้นหาภายนอก เร็วที่สุด)">
+                คุยล้วน
+              </button>
+              <button type="button" class="tool-mode-button" data-tool-mode="search" id="tool-mode-search-btn" title="โหมดค้นหาเชิงลึก (ดึงข้อมูลล่าสุดจาก Tavily/DuckDuckGo)">
+                ค้นเว็บ
+              </button>
+            </div>
+          </div>
+
+          <button type="button" class="new-chat-button" id="new-chat-button">
+            แชตใหม่
+          </button>
+
+          <button type="button" class="telemetry-toggle-button" id="telemetry-toggle-button" title="เปิด/ปิด แผงสถิติ Token & บริบท">
+            สถิติ Token
+          </button>
+
+          <span class="status-badge" id="model-status-badge">
+            Lite Ready
+          </span>
+
         </div>
 
-        <button type="button" class="new-chat-button" id="new-chat-button">
-          แชตใหม่
-        </button>
+        <div class="tool-notice-banner hidden" id="tool-notice-banner" role="status" aria-live="polite">
+          <span class="notice-icon" aria-hidden="true">i</span>
+          <span class="notice-text" id="notice-text"></span>
+          <button type="button" class="notice-close" id="notice-close" aria-label="ปิดการแจ้งเตือน">&times;</button>
+        </div>
 
-        <span class="status-badge" id="model-status-badge">
-          Lite Ready
-        </span>
+        <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>
 
-      </div>
+      </section>
 
-      <div class="tool-notice-banner hidden" id="tool-notice-banner" role="status" aria-live="polite">
-        <span class="notice-icon" aria-hidden="true">i</span>
-        <span class="notice-text" id="notice-text"></span>
-        <button type="button" class="notice-close" id="notice-close" aria-label="ปิดการแจ้งเตือน">&times;</button>
-      </div>
+      <aside class="telemetry-drawer hidden" id="telemetry-drawer" aria-label="แผงสถิติการใช้งาน Token">
+        <div class="drawer-header">
+          <div class="drawer-title-group">
+            <span class="drawer-title">สถิติ Token & บริบท</span>
+            <span class="drawer-model-pill" id="drawer-model-pill">Qwen2.5 1.5B</span>
+          </div>
+          <button type="button" class="drawer-close-btn" id="drawer-close-btn" aria-label="ปิดแผงสถิติ">&times;</button>
+        </div>
 
-      <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>
+        <div class="drawer-content">
 
-    </section>
+          <div class="telemetry-card">
+            <div class="card-header">
+              <span class="card-label">ขีดจำกัดบริบท (Context Window)</span>
+              <span class="card-percent" id="context-percent-text">0.0%</span>
+            </div>
+            <div class="meter-track">
+              <div class="meter-fill meter-normal" id="context-meter-fill" style="width: 0%"></div>
+            </div>
+            <div class="card-footer">
+              <span id="context-tokens-text">0 / 4,096 tokens</span>
+              <span class="meter-status-tag tag-healthy" id="context-status-tag">ปกติ</span>
+            </div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="card-header">
+              <span class="card-label">ความจำในเซสชัน (Sliding Memory)</span>
+              <span class="card-value" id="memory-turns-text">0 / 10 รอบ</span>
+            </div>
+            <div class="meter-track">
+              <div class="meter-fill" id="memory-meter-fill" style="width: 0%"></div>
+            </div>
+            <div class="card-sub-info">
+              <div>ความยาวบริบท: <strong id="memory-chars-text">0 / 2,400 ตัวอักษร</strong></div>
+              <div>โฟกัสปัจจุบัน: <strong id="memory-focus-text">ไม่มี</strong></div>
+            </div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="card-header">
+              <span class="card-label">รอบล่าสุด (Last Turn)</span>
+              <span class="turn-type-badge" id="turn-type-badge">พร้อมใช้งาน</span>
+            </div>
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-caption">Input (Prompt)</span>
+                <span class="stat-number" id="stat-prompt-tokens">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-caption">Output (Completion)</span>
+                <span class="stat-number" id="stat-completion-tokens">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-caption">รวมรอบนี้</span>
+                <span class="stat-number" id="stat-turn-total">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-caption">ความเร็ว</span>
+                <span class="stat-number" id="stat-tokens-speed">0 t/s</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="telemetry-card">
+            <div class="card-header">
+              <span class="card-label">ยอดสะสมในแชตนี้</span>
+              <span class="session-reset-hint">รีเซ็ตเมื่อเริ่มแชตใหม่</span>
+            </div>
+            <div class="stats-list">
+              <div class="stat-row">
+                <span>โทเค็นสะสมทั้งหมด:</span>
+                <strong id="session-total-tokens">0</strong>
+              </div>
+              <div class="stat-row">
+                <span>เรียกประมวลผล LLM:</span>
+                <strong id="session-llm-calls">0 ครั้ง</strong>
+              </div>
+              <div class="stat-row">
+                <span>ตอบทันที (0 Token):</span>
+                <strong id="session-deterministic-turns">0 ครั้ง</strong>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+    </div>
 
   </main>
 
