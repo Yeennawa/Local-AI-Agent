@@ -12,6 +12,7 @@
 AI-Agent/
 ├── index.js          Entry point หลัก (Deep Module seam ส่งออกฟังก์ชัน runAgent และ applyToolModePolicy)
 ├── agent.js          ตัวควบคุมหลัก (pipeline: metaRecall -> noteRecall -> resolve -> route -> toolMode -> execute -> compose -> remember)
+├── telemetry.js      โมดูลคำนวณและประเมิน Token, Context Window, และสถิติ Real-time (0 MicroSD writes)
 ├── toolMode.js       ระบบควบคุมโหมดเครื่องมือแบบ Pure Functional (auto, chat, search)
 ├── router.js         ระบบคัดกรองเจตนาแบบ Deterministic 100% ปราศจาก LLM decision loop
 ├── resolver.js       ระบบขยายคำถามต่อเนื่อง (Conversational Query Resolver) เติมประธาน/กรรมที่หาย
@@ -104,17 +105,76 @@ AI-Agent/
    - แปลงคำย่อภาษาไทย เช่น "นายก", "กทม", "จนท" ให้เป็นคำเต็ม
    - คัดกรองเจตนาของผู้ใช้ไปยัง Tool ที่เหมาะสมด้วย Deterministic Rules 100% ทำให้ลดเวลาและ Token ในรอบตัดสินใจของโมเดลได้อย่างสิ้นเชิง
 4. **Token & Memory Optimization (`ollamaClient.js` & `agent.js`)**:
-   - กำหนด `num_ctx: 1536` และ `num_thread: 3` เพื่อสงวน 1 CPU Core สำหรับ Node.js Event Loop
-   - ใช้ `keep_alive: "2m"` ป้องกันการโหลดโมเดลเข้าออก RAM บ่อยครั้ง
-   - กำหนด Sliding Window เก็บเฉพาะบทสนทนา 4 ข้อความล่าสุด (2 Turns) และจำกัดขนาดของข้อความไม่ให้บวม
-5. **Dynamic Model Switching & Memory Reclamation (`modelManager.js`)**:
+   - กำหนด Context Window 4,096 tokens (`numCtx: 4096`) เพื่อให้โมเดลมีพื้นที่อ่านเนื้อหาเว็บและเอกสารอ้างอิงได้อย่างครบถ้วน
+   - ขยายโควตาการสังเคราะห์คำตอบ: 600 tokens สำหรับ Lite Mode (1.5B) และ 768 tokens สำหรับ Advanced Mode (3B)
+   - กำหนดเวลา Timeout ป้องกันการค้างที่ 45 วินาทีสำหรับ Network Stall และสูงสุด 180 วินาทีสำหรับ Deep Thinking
+   - ขยายขีดจำกัดความยาวคำตอบสูงสุดเป็น 2,400 ตัวอักษร พร้อมระบบตัดคำตามวรรคตอนธรรมชาติ
+5. **Anti-Truncation & Safe Thai Formatting (`answer.js`)**:
+   - ระบบขจัดอาการประโยคขาดช่วง: ตรวจสอบและสงวนโครงสร้างประโยคภาษาไทยที่ลงท้ายด้วยคำธรรมชาติ (เช่น "ครับ", "ค่ะ", "นะคะ") โดยไม่ตัดคำย่อ (เช่น "พ.ศ.", "ค.ศ.")
+   - รักษารูปแบบการเว้นวรรคและการขึ้นย่อหน้าใหม่ (`\n\n`) อย่างเป็นระเบียบ ไม่บีบอัดข้อความเป็นบรรทัดเดียว
+6. **Dynamic Model Switching & Identity Synchronization (`modelManager.js`)**:
    - รองรับ 2 โหมด: **Lite Mode** (`qwen2.5:1.5b`, RAM ~1,150 MB) สำหรับงานทั่วไป และ **Advanced Mode** (`qwen2.5:3b`, RAM ~2,350 MB) สำหรับงานวิเคราะห์เชิงลึก
    - ใช้กลไก **Sequential Switching**: ตรวจสอบไฟล์โมเดลบนดิสก์ก่อน (`client.list()`) -> สั่ง Unload โมเดลเก่าออกจาก RAM (`keep_alive: 0`) -> วนตรวจสอบสถานะหน่วยความจำ (`client.ps()`) จนโมเดลเก่าหายไปจริง -> จึงเริ่มโหลดโมเดลใหม่เข้า RAM เพื่อป้องกันปัญหา Linux OOM Crash บน Raspberry Pi 5
    - ปลอดภัยด้วย **RequestQueue Mutual Exclusion**: คำขอสลับโมเดลจะเข้าคิวรอให้การสร้างข้อความแชตปัจจุบันเสร็จสิ้นก่อนเสมอ ป้องกันการ Unload โมเดลทับซ้อนกลางคัน
+   - ซิงค์ค่าชื่อและโหมดโมเดลบนแชตบับเบิลและ UI ให้ตรงกับความเป็นจริงทุกครั้งที่มีการสลับโหมด
 
 ---
 
-## 6. คู่มือการติดตั้งและเปิดใช้งาน
+## 6. ระบบ Telemetry และหน้าต่างแสดงสถานะการใช้งาน Token แบบ Real-time
+
+โมดูล `telemetry.js` ทำหน้าที่ประเมินและติดตามปริมาณการใช้งาน Token และสถิติขีดจำกัดบริบท (Context Window) โดยไม่ส่งผลกระทบต่อความเร็วในการตอบของ AI และไม่มีการบันทึกไฟล์ลงดิสก์ (0 Disk Writes):
+
+1. **การประเมิน Token ภาษาไทยและอังกฤษ (Zero-dependency Tokenizer)**:
+   - อักขระภาษาไทย: ประเมิน ~0.65 tokens ต่อตัวอักษร
+   - อักขระละตินและช่องว่าง: ประเมิน ~1 token ต่อ 3.8 ตัวอักษร
+   - คำนวณ Overhead ของ ChatML Formatting (+4 tokens/ข้อความ, +2 priming tokens)
+
+2. **หน้าต่าง Side Drawer แสดงสถานะ Real-time บน Frontend**:
+   - มีปุ่ม `สถิติ Token` ในแถบควบคุมข้างปุ่ม `แชตใหม่` เพื่อเปิด/ปิดหน้าต่างตามความต้องการ ไม่รกสายตา
+   - จดจำสถานะเปิด/ปิดผ่าน `localStorage` (`ai_agent_telemetry_open`)
+   - **มาตรวัดบริบท (Context Window Budget Meter)**: แถบสีแสดงสัดส่วน Token ที่ใช้ไปเทียบกับขีดจำกัด 4,096 tokens (สีเขียวปกติ <55%, สีเหลือง 55-80%, สีแดง >80%)
+   - **ความจุความจำเซสชัน (Sliding Memory)**: แสดงจำนวนรอบที่ใช้งาน (สูงสุด 10 รอบ), ความยาวตัวอักษรบริบท, และ Focus Entity
+   - **สถิติรอบล่าสุด (Last Turn)**: แสดง Input tokens, Output tokens, ความเร็วในการสร้าง (tokens/sec), และป้ายระบุว่าเป็นคำตอบแบบสังเคราะห์ LLM หรือตอบทันที (0 Token)
+   - **สถิติสะสมในแชต (Session Cumulative)**: นับยอดรวม Token ที่ใช้ในแชตนี้ และจำนวนรอบที่เรียกใช้โมเดล โดยจะรีเซ็ตกลับเป็น 0 อัตโนมัติเมื่อกดปุ่ม `แชตใหม่`
+
+3. **โครงสร้างข้อมูล Telemetry ในผลลัพธ์ (`usage`)**:
+```json
+{
+  "model": "qwen2.5:1.5b",
+  "modelLabel": "Qwen2.5 1.5B (Lite Mode)",
+  "mode": "lite",
+  "contextWindow": {
+    "usedTokens": 380,
+    "maxTokens": 4096,
+    "usagePercent": 9.3,
+    "historyTurnsUsed": 2,
+    "maxHistoryTurns": 10,
+    "contextCharsUsed": 450,
+    "maxContextChars": 2400,
+    "focusEntity": "Raspberry Pi"
+  },
+  "lastTurn": {
+    "promptTokens": 290,
+    "completionTokens": 90,
+    "totalTokens": 380,
+    "durationMs": 2150,
+    "tokensPerSec": 41.9,
+    "isDeterministic": false
+  },
+  "sessionTotal": {
+    "promptTokens": 290,
+    "completionTokens": 90,
+    "totalTokens": 380,
+    "llmCalls": 1,
+    "deterministicTurns": 0,
+    "totalTurns": 1
+  }
+}
+```
+
+---
+
+## 7. คู่มือการติดตั้งและเปิดใช้งาน
 
 ### ติดตั้ง Ollama และดาวน์โหลดโมเดล (ทำครั้งเดียว):
 
@@ -164,7 +224,7 @@ node AI-Agent/cli.js "นายกไทยคนปัจจุบันคื�
 
 ---
 
-## 7. การเชื่อมต่อ API สำหรับนักพัฒนา (API Contract)
+## 8. การเชื่อมต่อ API สำหรับนักพัฒนา (API Contract)
 
 ### 1. HTTP Endpoint ทั่วไป (`POST /api/chat`)
 ส่งข้อความคำถาม และรับคำตอบ JSON แบบรอบเดียว:
