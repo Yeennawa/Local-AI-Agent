@@ -212,7 +212,7 @@ node AI-Agent/server.js
 ### การทดสอบระบบ:
 
 ```bash
-# รันชุดทดสอบ Unit และ Integration Tests ทั้งหมด (281 tests, 71 suites)
+# รันชุดทดสอบ Unit และ Integration Tests ทั้งหมด (290 tests, 71 suites)
 npm test
 
 # รันชุดทดสอบประเมินผลคุณภาพและความแม่นยำของ Intent Router, Memory และ Tool Modes
@@ -248,10 +248,43 @@ curl -X POST http://localhost:3000/api/chat \
       "durationMs": 1
     }
   ],
-  "toolMode": "auto",
   "notice": null,
   "sessionId": "session-001",
-  "error": null
+  "error": null,
+  "model": "qwen2.5:1.5b",
+  "modelLabel": "Qwen2.5 1.5B",
+  "mode": "lite",
+  "usage": {
+    "model": "qwen2.5:1.5b",
+    "modelLabel": "Qwen2.5 1.5B",
+    "mode": "lite",
+    "contextWindow": {
+      "usedTokens": 45,
+      "maxTokens": 4096,
+      "usagePercent": 1.1,
+      "historyTurnsUsed": 1,
+      "maxHistoryTurns": 10,
+      "contextCharsUsed": 65,
+      "maxContextChars": 2400,
+      "focusEntity": null
+    },
+    "lastTurn": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "durationMs": 3,
+      "tokensPerSec": 0,
+      "isDeterministic": true
+    },
+    "sessionTotal": {
+      "promptTokens": 0,
+      "completionTokens": 0,
+      "totalTokens": 0,
+      "llmCalls": 0,
+      "deterministicTurns": 1,
+      "totalTurns": 1
+    }
+  }
 }
 ```
 
@@ -263,25 +296,24 @@ curl -N -X POST http://localhost:3000/api/chat/stream \
   -d '{"message": "เล่าประวัติความเป็นมาของคอมพิวเตอร์สั้นๆ", "sessionId": "session-001", "toolMode": "chat"}'
 ```
 Event ที่ส่งออกมา:
-- `event: status`: ส่งสถานะการทำงานปัจจุบัน (`using_tool`, `synthesizing`, หรือ `notice`)
+- `event: status`: ส่งสถานะการทำงานปัจจุบัน (`using_tool`, `synthesizing`, หรือ `notice`) พร้อมค่า `estimatedPromptTokens` และ `maxContextTokens`
 - `event: token`: ส่งชิ้นส่วนข้อความ `{ "token": "คอมพิวเตอร์" }`
-- `event: done`: ส่งโครงสร้าง `AgentResponse` ฉบับเต็มเมื่อการสังเคราะห์เสร็จสิ้น
+- `event: done`: ส่งโครงสร้าง `AgentResponse` ฉบับเต็มพร้อมฟิลด์ `usage` เมื่อการสังเคราะห์เสร็จสิ้น
 
 ### 3. Tool & Search Status Endpoint (`GET /api/tools/status`)
-ตรวจสอบสถานะเครื่องมือ ผู้ให้บริการสืบค้น และโหมดที่รองรับ:
+ตรวจสอบสถานะโหมดเครื่องมือที่รองรับ และสถานะ Tavily API Key:
 ```bash
 curl http://localhost:3000/api/tools/status
 ```
 ตัวอย่าง Response:
 ```json
 {
-  "supportedModes": ["auto", "chat", "search"],
-  "defaultMode": "auto",
-  "search": {
-    "tavilyConfigured": false,
-    "activeProvider": "duckduckgo",
-    "fallbackProvider": "wikipedia"
-  }
+  "modes": {
+    "auto": { "name": "auto", "label": "ออโต้", "description": "Adaptive RAG" },
+    "chat": { "name": "chat", "label": "คุยล้วน", "description": "Parametric only" },
+    "search": { "name": "search", "label": "ค้นเว็บ", "description": "Web search" }
+  },
+  "tavilyConfigured": false
 }
 ```
 
@@ -322,7 +354,10 @@ curl -X POST http://localhost:3000/api/model/switch \
   "success": true,
   "previousMode": "lite",
   "currentMode": "advanced",
+  "mode": "advanced",
+  "label": "Advanced Mode (3B)",
   "model": "qwen2.5:3b",
+  "estimatedRamMB": 2350,
   "loadedModels": ["qwen2.5:3b"]
 }
 ```

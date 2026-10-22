@@ -1,344 +1,278 @@
-# Local AI Agent (Max Headbox Adaptation)
+# Local AI Agent (Raspberry Pi 5 Edge AI Assistant)
 
-Distributed Edge AI Assistant with ReAct Tool Execution, Real-Time SSE Streaming, and Animated Avatar UI for Raspberry Pi 5 (4GB RAM).
+ระบบผู้ช่วย AI อัจฉริยะประมวลผลในเครื่อง (Edge AI Assistant) แบบกระจายศูนย์ (Distributed Architecture) สำหรับบอร์ด **Raspberry Pi 5 (RAM 4GB)** และคอมพิวเตอร์ทั่วไป ขับเคลื่อนด้วยสถาปัตยกรรม **Adaptive RAG**, ระบบสลับโมเดลแบบไดนามิก (**Dynamic Model Switching**), โหมดควบคุมการทำงานของเครื่องมือ (**Tool Modes**), การสืบค้นเว็บแบบสองชั้น (**Dual Search Providers**), และแผงรายงานสถิติการใช้งาน Token แบบ Real-time (**Token & Context Limit Telemetry**)
 
----
-
-## 1. Project Overview
-
-**Local-AI-Agent** is an edge-native, privacy-preserving AI assistant adapted from the [Max Headbox](https://github.com/syxanash/maxheadbox) concept. It delivers a full-stack, distributed AI agent capable of deterministic tool execution and streaming conversations entirely on resource-constrained edge hardware.
-
-The system runs a quantized language model (`qwen2.5:1.5b` via Ollama) on a **Raspberry Pi 5 Model B (4GB RAM)** acting as a headless edge compute server. Clients (such as laptops or tablets in a classroom or home network) connect over HTTP and Server-Sent Events (SSE) to an interactive CRT Cyberpunk Terminal interface featuring an animated avatar whose facial expressions are driven by the agent's emotional state (`feeling`).
-
-```
-+-------------------------------------------------------------------------+
-|                    DISTRIBUTED SYSTEM TOPOLOGY                          |
-+-------------------------------------------------------------------------+
-|                                                                         |
-|  [ Client Device (Laptop / Browser) ]                                   |
-|  * Retro CRT Cyberpunk Terminal UI                                      |
-|  * Animated Avatar (Facial state driven by 'feeling')                   |
-|  * Real-Time Server-Sent Events (SSE) Token Streaming                   |
-|                                                                         |
-|                                 ^                                       |
-|                                 | HTTP / SSE (Port 3000)                |
-|                                 v                                       |
-|                                                                         |
-|  [ Edge Compute Server (Raspberry Pi 5 - 4GB RAM) ]                     |
-|  * Express.js HTTP Server & FIFO RequestQueue (Concurrency Guard)       |
-|  * Thai Query Normalizer & SOV Disambiguation (Smart Query Preservation) |
-|  * Note Memory Ledger & In-Memory Session Memory (0 Disk Writes)        |
-|  * ReAct Agent Engine & Tool Registry (9 Deterministic Tools)           |
-|  * Ollama Runtime (qwen2.5:1.5b, num_ctx: 1536, keep_alive: 2m)         |
-|                                                                         |
-+-------------------------------------------------------------------------+
-```
+โปรเจกต์นี้ต่อยอดแนวคิดจาก [Max Headbox](https://github.com/syxanash/maxheadbox) โดยปรับปรุงสถาปัตยกรรมใหม่ทั้งหมดให้ทำงานเป็น **Deep Module** บนสภาพแวดล้อมฮาร์ดแวร์ทรัพยากรจำกัด ปราศจากการเรียกใช้งาน Cloud API ภายนอก (ยกเว้นบริการค้นหาเว็บทางเลือก) และปกป้อง Flash Memory ของ MicroSD Card ด้วยการไม่เขียนไฟล์ชั่วคราวลงดิสก์ (**Zero Disk Writes**)
 
 ---
 
-## 2. Key Engineering Highlights
+## 1. จุดเด่นทางวิศวกรรม (Key Engineering Highlights)
 
-### 1. Smart Query Preservation & Multi-Pattern Thai Analyzer
-Small edge models (1.5B parameters) are prone to hallucinating tool schemas, confusing temporal vs. factual queries, stumbling over Thai abbreviations, and misclassifying practical questions. This system solves that problem before prompting the LLM:
-- **Thai Query Normalizer & Slang Lexicon (`normalizer.js`)**: Automatically expands Thai acronyms ("นายก", "กทม", "จนท"), collapses repeated/elongated vowels ("แมวววว" -> "แมว"), and normalizes modern social slang.
-- **Active/Passive SOV Disambiguation**: Differentiates between edibility queries without an object entity (e.g. "แมวกินได้ไหม" -> human consumption of cat meat/legal protection) versus questions with subject, verb, and object (e.g. "แมวกินช็อกโกแลตได้ไหม" -> feline toxicity), preserving conversational predicates and multi-turn focus entities.
-- **Deterministic 2-Stage Router (`router.js`)**: Evaluates incoming queries using zero-shot rule priority across 18 categories, routing practical and life queries to open web search, encyclopedic definitions to Wikipedia, and conversational chit-chat with 100% benchmark precision.
-
-### 2. Note Memory Ledger (Zero Latency & CoALA Architecture)
-- **In-Memory QA Ledger (`memory.js`)**: Caches verified factual answers in RAM (0 MicroSD card writes) with LRU eviction and 3-tier recall (Exact canonical key, high-overlap fuzzy semantic matching with subject contradiction guard, and multi-turn topic context injection).
-- **0ms Instant Recall**: Answering identical or colloquially rephrased queries instantly without executing LLM inference, completely eliminating repeated hallucinations.
-
-### 3. Deep Wikipedia Retrieval & 100% Faithful Synthesis
-- **5-Tier Retrieval Strategy (`wiki.js`)**: Executes Thai Wikipedia primary lookup, English fallback, disambiguation page rejection, semantic relevance validation, and in-article deep passage extraction.
-- **Windowed Passage Extraction**: Identifies the exact paragraph answering complex relational queries (e.g. "What did Einstein win the Nobel Prize for?") rather than truncating at the generic lead summary.
-- **Zero Hallucination Synthesis & Polarity Guard**: Forces `temperature: 0.0` during Wikipedia summarization and employs sentence-boundary and toxicity/polarity validation to guarantee that answers strictly reflect verifiable facts.
-
-### 4. Suite of 9 Deterministic Tools
-All tools are registered with schema validation and an automatic 5-second circuit breaker in `AI-Agent/tools/registry.js`:
-- `get_system_info`: Inspects real-time CPU load, memory usage, temperature, and uptime.
-- `get_current_time`: Returns ISO date and localized time formatted for the requested timezone.
-- `calculate`: Evaluates arithmetic expressions safely without `eval()`.
-- `search_wikipedia`: Performs deep factual retrieval with relevance guards and passage scoring.
-- `search_web`: Performs zero-API-key open web queries via DuckDuckGo HTML Lite and Wikipedia fallback.
-- `get_news`: Pulls breaking news from Google News RSS with Thai category filtering.
-- `get_weather`: Retrieves real-time weather and temperature metrics via the Open-Meteo API.
-- `get_fx`: Computes real-time foreign exchange conversions across global currencies.
-- `search_github`: Searches GitHub repositories and returns owners, stars, and language stats.
-
-### 5. All-Ages Conversational Intelligence
-- **Thai Humor & Slang Engine (`culture.js`)**: Delivers curated Thai jokes and riddles with per-session non-repeating rotation, explains trendy youth slang, and supports dynamic roleplay persona adapters.
-
-### 6. Edge Hardware Protection (Raspberry Pi 5 4GB RAM)
-Running generative models on an ARM Cortex-A76 with 4GB RAM requires strict resource boundaries:
-- **FIFO Request Serialization (`queue.js`)**: Limits concurrent model executions to 1, queuing up to 10 incoming requests and returning HTTP 503 if overloaded, eliminating Linux Out-Of-Memory (OOM) crashes.
-- **Zero MicroSD Flash Wear (`memory.js`)**: All session history and note ledgers are maintained strictly in Node.js heap memory, resulting in 0 bytes written to the SD card during chat sessions.
-- **Optimized Model Execution (`ollamaClient.js`)**: Enforces `num_ctx: 1536`, `num_thread: 3` (leaving 1 CPU core free for network I/O and the Node.js event loop), and `keep_alive: "2m"`.
+| คุณสมบัติ | การทำงาน | กลไกเชิงวิศวกรรม (Engineering Mechanism) |
+| :--- | :--- | :--- |
+| **Dynamic Model Switching** | สลับโหมด AI ได้ทันทีระหว่าง Lite (1.5B) และ Advanced (3B) | **Sequential Unload**: ปลดโมเดลเดิมออกจาก RAM (`keep_alive: 0`) และตรวจสอบสถานะหน่วยความจำผ่าน `client.ps()` จน RAM คืนกลับมาก่อนจึงโหลดโมเดลใหม่ ป้องกัน Linux OOM Crash |
+| **Tool Modes (โหมดเครื่องมือ)** | เลือกรูปแบบการทำงานได้ 3 โหมดตามลักษณะงาน: ออโต้, คุยล้วน, ค้นเว็บ | **Tool Mode Policy Engine**: ควบคุมการเปิด/ปิดเครื่องมือภายนอกในระดับฟังก์ชัน จำค่าผ่าน `localStorage` เหมือน Gemini |
+| **Dual Web Search Providers** | ค้นหาข้อมูลเว็บเปิดสดใหม่โดยไม่ต้องพึ่งพา API Key เป็นภาคบังคับ | **Single Facade with Fallback**: ใช้งาน Tavily AI Search เมื่อมี API Key และสลับไปใช้ DuckDuckGo HTML Lite (Zero-Key) โดยอัตโนมัติพร้อมแจ้งเตือนผ่าน Notice Banner |
+| **Token & Context Telemetry** | หน้าต่างรายงานการใช้งาน Token และขีดจำกัดบริบทแบบ Real-time | **In-Memory Telemetry Engine**: คำนวณ Token ภาษาไทยและอังกฤษด้วยอัตราส่วนเฉพาะทาง แสดงผลผ่าน Side Drawer แบบพับเก็บได้ และรีเซ็ตอัตโนมัติเมื่อเริ่มแชตใหม่ |
+| **Note Memory Ledger** | ตอบคำถามซ้ำหรือคำถามที่มีข้อเท็จจริงแน่นอนได้ในเวลา 0 ms | **CoALA Architecture**: จดจำคู่คำถาม-คำตอบที่ผ่านการตรวจสอบแล้วใน RAM พร้อมระบบค้นหาแบบ 3 ระดับ ลดภาระ LLM และตัดโอกาสเกิดอาการหลอน (Zero Hallucination) |
+| **9 Deterministic Tools** | เครื่องมือดึงข้อมูลสดและคำนวณที่แม่นยำ 100% | **Deterministic Tool Registry**: ระบบคัดกรองเจตนา 100% (Intent Router) ตัดสินใจเรียก Tool โดยไม่เสีย Token ในรอบวางแผน พร้อม Circuit Breaker ป้องกันการค้าง |
+| **Anti-Truncation Thai Formatting** | ป้องกันข้อความขาดช่วงกลางคันและรักษารูปแบบประโยคภาษาไทย | **Extractive Grounding & Sentence Guard**: ไม่ตัดคำย่อ (พ.ศ., ค.ศ.), ตรวจจับคำลงท้ายประโยคธรรมชาติ (ครับ/ค่ะ), และรักษาการเว้นวรรคขึ้นบรรทัดใหม่ |
+| **Edge Hardware Protection** | เสถียรภาพสูงสุดบน Raspberry Pi 5 แรม 4GB | **FIFO RequestQueue**: จัดคิวประมวลผลทีละ 1 คำขอ (คิวสูงสุด 10) ป้องกันแรมล้น และไม่เขียนดิสก์ (0 MicroSD Writes) |
 
 ---
 
-## 3. System Architecture & Data Flow
+## 2. เริ่มต้นใช้งานอย่างรวดเร็ว (Quick Start)
 
-```mermaid
-flowchart TD
-    User([User Prompt]) --> Client[Web Frontend UI]
-    Client -->|POST /api/chat/stream| Server[Express.js Server]
-    
-    subgraph Edge_Hardware [Raspberry Pi 5 - Edge Compute]
-        Server --> Queue[FIFO RequestQueue]
-        Queue --> Normalizer[Thai Query Normalizer & SOV Analysis]
-        Normalizer --> MemoryCheck{Note Memory Ledger}
-        MemoryCheck -->|Cache Hit 0ms| FastReply[Instant Verified Reply]
-        MemoryCheck -->|Cache Miss| Router[2-Stage Intent Router]
-        
-        Router -->|Tool Required| Registry[Tool Registry]
-        Router -->|Chit-chat / Culture| Culture[Culture & Wit Engine]
-        Router -->|Chit-chat / General| OllamaClient[Ollama Client]
-        Culture --> OllamaClient
-        
-        subgraph Tool_Execution [Deterministic Tools]
-            Registry --> SystemInfo[get_system_info]
-            Registry --> Time[get_current_time]
-            Registry --> Calc[calculate]
-            Registry --> Wiki[search_wikipedia]
-            Registry --> Web[search_web]
-            Registry --> News[get_news]
-            Registry --> Weather[get_weather]
-            Registry --> FX[get_fx]
-            Registry --> GitHub[search_github]
-        end
-        
-        Tool_Execution --> Synthesis[Faithful Synthesis Engine]
-        Synthesis --> OllamaClient
-        
-        subgraph LLM_Runtime [Local Daemon]
-            OllamaClient --> OllamaModel["qwen2.5:1.5b (1536 ctx, 3 threads)"]
-        end
-        
-        OllamaModel --> TokenStream[SSE Token Stream]
-    end
-    
-    FastReply --> Client
-    TokenStream -->|Tokens + Feeling State| Client
-    Client --> Avatar[Animated Avatar Expression]
-```
+### ขั้นตอนที่ 1: ติดตั้ง Ollama และดาวน์โหลดโมเดล
 
----
-
-## 4. Repository Structure
-
-```text
-Local-AI-Agent/
-├── docs/                               # Architectural and operational runbooks
-│   ├── PROJECT_CONTEXT.md              # Master project context and architectural blueprint
-│   ├── AGENT_API_CONTRACT.md           # API specification and data schemas
-│   ├── PI_RUNBOOK.md                   # Raspberry Pi 5 ZRAM, systemd, and cooling setup
-│   ├── AGENT_RULES.md                  # Engineering standards (Zero Emojis, Restrained Typography)
-│   ├── OLLAMA_AGENT_SKILL.md           # Small LLM engineering and prompting guide
-│   └── TOKEN_OPTIMIZATION_GUIDE.md     # Memory and token budget management
-├── AI-Agent/                           # Edge AI Agent Engine (Deep Module)
-│   ├── index.js                        # Public entry point exporting runAgent()
-│   ├── agent.js                        # ReAct controller, loop guards, and faithful synthesis
-│   ├── router.js                       # 2-Stage Intent Router
-│   ├── normalizer.js                   # Thai Query Normalizer & SOV Analysis
-│   ├── memory.js                       # In-memory Session Memory & Note Memory Ledger (0 disk writes)
-│   ├── culture.js                      # Thai jokes, slang explanations, and roleplay adapters
-│   ├── queue.js                        # FIFO RequestQueue for concurrency control
-│   ├── server.js                       # Express server with SSE streaming endpoints
-│   ├── ollamaClient.js                 # Streamed Ollama client with abort controller
-│   ├── parse.js                        # Pure JSON extractor and sliding history sanitizer
-│   ├── cli.js                          # Terminal test CLI
-│   ├── README.md                       # AI-Agent module documentation
-│   └── tools/                          # Suite of 9 deterministic tools
-│       ├── registry.js                 # Tool registration and schema validator
-│       ├── systemInfo.js               # get_system_info tool
-│       ├── time.js                     # get_current_time tool
-│       ├── calculator.js               # calculate tool
-│       ├── github.js                   # search_github tool
-│       ├── wiki.js                     # search_wikipedia tool
-│       ├── webSearch.js                # search_web tool (zero-key web queries)
-│       ├── news.js                     # get_news tool
-│       ├── feedParser.js               # RSS feed parser helper
-│       ├── weather.js                  # get_weather tool
-│       └── fx.js                       # get_fx tool
-├── Frontend/                           # Web Chat UI & Animated Avatar
-│   ├── index.html                      # Retro CRT terminal chat layout
-│   ├── style.css                       # Cyberpunk styling and responsive layout
-│   ├── app.js                          # Client-side SSE event consumer and state manager
-│   └── ReadMe.md                       # Frontend integration notes
-├── .agents/                            # Local AI Agent Developer Skills
-│   └── skills/                         # codebase-design, code-review, git-guardrails, tdd, etc.
-├── tests/                              # Automated test suites
-│   ├── *.test.js                       # 226 unit & integration tests across 59 suites
-│   └── eval/                           # Accuracy and memory benchmark runner
-├── package.json                        # Node.js project manifest (ES Modules)
-├── .gitignore                          # Clean repository rules
-└── README.md                           # Master project documentation (this file)
-```
-
----
-
-## 5. Empirical Benchmarks & Quality Scorecard
-
-The system undergoes rigorous regression testing using Node.js built-in test runner and a standalone evaluation benchmark:
-
-| Metric | Target | Measured Result | Status |
-| :--- | :--- | :--- | :--- |
-| **Unit & Integration Tests** | 100% Pass | **226 / 226 Passed** (59 Suites) | PASS |
-| **Router Intent Accuracy** | >= 95.0% | **69 / 69 (100.0%)** across 18 Categories | PASS |
-| **Multi-Turn Recall Rate (10 Turns)** | >= 90.0% | **100.0%** (Turn 1 recall at Turn 10) | PASS |
-| **MicroSD Card Writes** | 0 Bytes | **0 Bytes** (Pure RAM Ledger) | PASS |
-| **Node.js Memory Footprint (RSS)** | < 128 MB | **~40.1 MB** | PASS |
-| **Model Resident Memory** | < 1.5 GB | **~1.2 GB** (`qwen2.5:1.5b`) | PASS |
-| **Wikipedia Hallucination Rate** | 0.0% | **0.0%** (Strict Passage Verification) | PASS |
-
----
-
-## 6. Installation & Quick Start Guide
-
-### Prerequisites
-- **Node.js**: Version 20.x or higher LTS
-- **Ollama**: Installed locally on the host machine or Raspberry Pi 5
-- **Model**: `qwen2.5:1.5b`
-
-### Step 1: Install Ollama & Pull the Model
-
-#### On Linux / Raspberry Pi:
 ```bash
+# สำหรับ Linux / Raspberry Pi:
 curl -fsSL https://ollama.com/install.sh | sh
+
+# ดึงโมเดลสำหรับ Lite Mode (1.5B, ขนาด ~986 MB):
 ollama pull qwen2.5:1.5b
-```
 
-#### On Windows / macOS:
-Download and install the official installer from [ollama.com](https://ollama.com), then open a terminal and run:
-```bash
-ollama pull qwen2.5:1.5b
+# ดึงโมเดลสำหรับ Advanced Mode (3B, ขนาด ~1.9 GB - ทางเลือก):
+ollama pull qwen2.5:3b
 ```
+*(สำหรับ Windows หรือ macOS สามารถดาวน์โหลดตัวติดตั้งอย่างเป็นทางการได้จาก [ollama.com](https://ollama.com))*
 
-### Step 2: Clone Repository & Install Dependencies
+### ขั้นตอนที่ 2: ติดตั้งและตั้งค่าโปรเจกต์
 
 ```bash
+# Clone คลังโค้ด
 git clone https://github.com/Yeennawa/Local-AI-Agent.git
 cd Local-AI-Agent
+
+# ติดตั้ง Node.js Dependencies (ต้องการ Node.js 20+ LTS)
 npm install
+
+# กำหนดค่า Environment Variables (ทางเลือก):
+cp .env.example .env
+# หากต้องการใช้ Tavily AI Search ให้ระบุ: TAVILY_API_KEY=tvly-xxxxxxxxxxxx
+# หากไม่ระบุ ระบบจะใช้งาน DuckDuckGo HTML Lite (Zero-Key) โดยอัตโนมัติ
 ```
 
-### Step 3: Start the Server
+### ขั้นตอนที่ 3: เปิดใช้งานระบบ
 
 ```bash
-# Start the full-stack server (serving API and Frontend on port 3000)
+# เริ่มต้นเซิร์ฟเวอร์แบบ Full-stack (ให้บริการทั้ง API และหน้าเว็บที่ Port 3000)
 npm start
 ```
 
-Open your browser and navigate to:
+เปิดเว็บเบราว์เซอร์ไปที่: `http://localhost:3000` (หรือ `http://<IP_ของ_Raspberry_Pi>:3000`)
+
+---
+
+## 3. คู่มือการใช้งานหน้าเว็บและแผงควบคุม (Web UI Guide)
+
+```text
++-----------------------------------------------------------------------------------------+
+|                                    LOCAL AI AGENT UI                                    |
++-----------------------------------------------------------------------------------------+
+|                                                                                         |
+|  [ พิมพ์คำถามของคุณ...                                             ]  [ ส่ง ]           |
+|                                                                                         |
+|  +--------------------------------------------------+  +-----------------------------+  |
+|  | (o_o)  Local AI                                  |  | สถิติ Token & บริบท [Qwen 1.5B] [X] |  |
+|  |        [Lite 1.5B][Adv 3B]  [ออโต้][คุยล้วน][ค้นเว็บ] |  |-----------------------------|  |
+|  |        [แชตใหม่] [สถิติ Token]  [Lite Ready]       |  | ขีดจำกัดบริบท (Context Window)|  |
+|  |--------------------------------------------------|  | [====--------] 380/4,096 (9%)|  |
+|  | [i] ไม่พบ Tavily API Key จึงใช้งาน DuckDuckGo แทน [X]|  |                             |  |
+|  |--------------------------------------------------|  | ความจำในเซสชัน: 2/10 รอบ    |  |
+|  | User: อุณหภูมิกรุงเทพตอนนี้กี่องศา                    |  | ความยาวบริบท: 450/2,400 อักษร|  |
+|  |                                                  |  | โฟกัส: กรุงเทพมหานคร         |  |
+|  | Assistant: ขณะนี้กรุงเทพมหานครมีอุณหภูมิ 31.2°C ...  |  |                             |  |
+|  | [ โมเดล: Qwen2.5 1.5B | ใช้เครื่องมือ: get_weather ]|  | รอบล่าสุด: สังเคราะห์ LLM     |  |
+|  |                                                  |  | Input: 290 | Output: 90     |  |
+|  |                                                  |  | ความเร็ว: 41.9 t/s           |  |
+|  |                                                  |  | ยอดสะสม: 380 tokens (1 ครั้ง)|  |
+|  +--------------------------------------------------+  +-----------------------------+  |
++-----------------------------------------------------------------------------------------+
 ```
-http://localhost:3000
-```
 
-### Step 4: Run Verification Tests
+### รายละเอียดปุ่มควบคุม:
+1. **Model Switcher (`Lite (1.5B)` / `Adv (3B)`):**
+   - **Lite Mode:** ใช้แรมเพียง ~1,150 MB เหมาะสำหรับการตอบทั่วไป รวดเร็ว และประหยัดพลังงาน
+   - **Adv Mode:** ใช้แรม ~2,350 MB เหมาะสำหรับการวิเคราะห์เชิงลึก การเขียนโค้ด และการให้เหตุผลหลายชั้น
+2. **Tool Mode Switcher (`ออโต้` / `คุยล้วน` / `ค้นเว็บ`):**
+   - **ออโต้ (Auto):** โหมด Adaptive RAG อัจฉริยะ เลือกระหว่างข้อมูลในตัว, เครื่องมือ, หรือการค้นหาเว็บตามเจตนาคำถาม
+   - **คุยล้วน (Chat):** ปิดการสืบค้นเว็บและ Wikipedia ทั้งหมด ตอบกลับด้วย Parametric Knowledge ทันทีเพื่อความรวดเร็วสูงสุด (ยังคงใช้เครื่องมือภายในเครื่อง เช่น เวลา, คำนวณ, สถานะเครื่อง)
+   - **ค้นเว็บ (Search):** บังคับสืบค้นข้อมูลเว็บเปิดสดใหม่ผ่าน Tavily หรือ DuckDuckGo สำหรับทุกคำถามที่เป็นความรู้
+3. **ปุ่ม `แชตใหม่` (New Chat):**
+   - ล้างประวัติการสนทนาในหน้าต่างแชต คืนหน่วยความจำเซสชันบนเซิร์ฟเวอร์ และรีเซ็ตมาตรวัด Token กลับเป็น 0 ทันที
+4. **ปุ่ม `สถิติ Token` (Telemetry Drawer):**
+   - เปิด/ปิด แผงควบคุมด้านข้างเพื่อตรวจสอบสถานะ Token และบริบทแบบ Real-time โดยไม่บดบังพื้นที่แชต
+5. **ป้ายกำกับความโปร่งใส (Metadata Badges):**
+   - ใต้ข้อความตอบกลับของ AI จะระบุชื่อโมเดลที่ใช้ประมวลผลจริง และรายชื่อเครื่องมือที่ถูกเรียกใช้งานอย่างชัดเจน
 
-```bash
-# Run all 226 unit and integration tests
-npm test
+---
 
-# Run quality and intent accuracy benchmark (69 evaluations across 18 categories)
-node tests/eval/runner.js
+## 4. สถาปัตยกรรมระบบและการไหลของข้อมูล (System Architecture)
 
-# Test interactive conversation via Terminal CLI
-node AI-Agent/cli.js "นายกไทยคนปัจจุบันคือใคร"
+```mermaid
+flowchart TD
+    User([User Prompt]) --> ClientUI[Web Chat Frontend]
+    ClientUI -->|POST /api/chat/stream| Server[Express.js Server]
+    
+    subgraph Edge_Runtime [Raspberry Pi 5 Server]
+        Server --> Queue[FIFO RequestQueue]
+        Queue --> Normalizer[Thai Query Normalizer & Resolver]
+        
+        Normalizer --> FastCheck{Lexical Meta & Note Recall}
+        FastCheck -->|Hit 0ms| FastOut[Instant Verified Answer]
+        
+        FastCheck -->|Miss| PolicyRouter[Router & Tool Mode Policy]
+        
+        PolicyRouter -->|Local / Chit-chat| DirectGen[Direct / Humor Engine]
+        PolicyRouter -->|Structured Tool| ToolExec[Deterministic Tools Execution]
+        PolicyRouter -->|External Retrieval| SearchExec[Dual Search: Tavily / DDG / Wiki]
+        
+        ToolExec -->|Structured Answer| AnswerComposer[Answer Composer: 0-Token Template]
+        SearchExec --> CleanContext[Clean Extractive Context]
+        
+        CleanContext --> SynthesisEngine[Faithful LLM Synthesis]
+        DirectGen --> SynthesisEngine
+        
+        subgraph Local_Ollama [Ollama Daemon Runtime]
+            SynthesisEngine --> OllamaClient[Streamed Ollama Client]
+            OllamaClient --> ActiveModel["Model: qwen2.5:1.5b / 3b (numCtx: 4096)"]
+        end
+        
+        ActiveModel --> PolarityGuard[Anti-Truncation & Polarity Guard]
+        PolarityGuard --> Telemetry[Telemetry Engine & Usage Ledger]
+        AnswerComposer --> Telemetry
+        FastOut --> Telemetry
+    end
+    
+    Telemetry -->|SSE Event: status / token / done| ClientUI
+    ClientUI --> ChatBubble[Chat Feed + Metadata Badge]
+    ClientUI --> TelemetryDrawer[Real-time Token Drawer]
+    ClientUI --> AvatarExpression[Animated Avatar Feeling]
 ```
 
 ---
 
-## 7. Raspberry Pi 5 Production Deployment
+## 5. เครื่องมือในระบบทั้ง 9 ตัว (Built-in Deterministic Tools)
 
-For complete instructions regarding production setup on Raspberry Pi OS (64-bit), refer to the detailed [docs/PI_RUNBOOK.md](file:///c:/Projects/Local-AI-Agent/docs/PI_RUNBOOK.md).
+ทุกเครื่องมือทำงานแบบ Deterministic ผ่านระบบตรวจสอบความถูกต้องของพารามิเตอร์และควบคุม Timeout ป้องกันการค้าง:
 
-### Essential Production Settings:
-1. **ZRAM Configuration**: Enable 50% RAM compressed swap (`lz4`) and disable `dphys-swapfile` to prevent MicroSD flash deterioration.
-2. **Ollama Service Limits**:
-   ```ini
-   [Service]
-   Environment="OLLAMA_NUM_PARALLEL=1"
-   Environment="OLLAMA_MAX_LOADED_MODELS=1"
-   Environment="OLLAMA_KEEP_ALIVE=2m"
-   Environment="OLLAMA_HOST=0.0.0.0:11434"
-   ```
-3. **Systemd Service**: Run the Node.js server with heap cap `--max-old-space-size=512`.
+| ชื่อเครื่องมือ | คำอธิบายหน้าที่ | แหล่งข้อมูล | รูปแบบการตอบกลับ |
+| :--- | :--- | :--- | :--- |
+| `get_system_info` | ตรวจสอบสถานะฮาร์ดแวร์ (RAM, CPU, อุณหภูมิ, Uptime) | ระบบปฏิบัติการ (Node.js OS API) | โครงสร้างแม่แบบ (0 Token) |
+| `get_current_time` | ตรวจสอบวันและเวลาปัจจุบันตามเขตเวลา | ระบบนาฬิกาเครื่อง (Intl DateTime) | โครงสร้างแม่แบบ (0 Token) |
+| `calculate` | คำนวณทางคณิตศาสตร์อย่างปลอดภัย ปราศจาก `eval()` | Pure Function Tokenizer | โครงสร้างแม่แบบ (0 Token) |
+| `get_weather` | ตรวจสอบสภาพอากาศ อุณหภูมิ และความชื้นแบบ Real-time | Open-Meteo API | โครงสร้างแม่แบบ (0 Token) |
+| `get_fx` | ตรวจสอบและคำนวณอัตราแลกเปลี่ยนเงินตราสากล | Frankfurter Currency API | โครงสร้างแม่แบบ (0 Token) |
+| `get_news` | ดึงพาดหัวข่าวเด่นล่าสุดตามหมวดหมู่ภาษาไทย | Google News RSS Feed | โครงสร้างแม่แบบ (0 Token) |
+| `search_github` | ค้นหาคลังโค้ด ยอดดาว และภาษาโปรแกรมบน GitHub | GitHub REST API | โครงสร้างแม่แบบ (0 Token) |
+| `search_wikipedia` | ค้นหาบทความเชิงลึก ข้ามหน้ากำกวม และเจาะจง Passage | Wikipedia API (TH/EN) | สังเคราะห์สรุปเนื้อหา (LLM) |
+| `search_web` | สืบค้นข้อมูลเว็บเปิดแบบสดใหม่ (Tavily AI -> DuckDuckGo) | Tavily Search / DuckDuckGo Lite | สังเคราะห์สรุปเนื้อหา (LLM) |
 
 ---
 
-## 8. API Reference
+## 6. โครงสร้างไฟล์ในโปรเจกต์ (Repository Structure)
 
-### 1. Synchronous Chat (`POST /api/chat`)
-- **Request Body**:
-  ```json
-  {
-    "message": "เครื่องสถานะเป็นอย่างไรบ้าง",
-    "sessionId": "session-unique-id"
-  }
-  ```
-- **Response Body (`AgentResponse`)**:
-  ```json
-  {
-    "text": "ขณะนี้เครื่อง Raspberry Pi 5 มีแรมเหลือ 2,150 MB จาก 4,096 MB ครับ",
-    "status": "idle",
-    "feeling": "happy",
-    "toolsUsed": [
-      {
-        "tool": "get_system_info",
-        "params": {},
-        "result": { "freeMemoryMB": 2150, "memoryUsagePercent": 47.5 },
-        "durationMs": 2
-      }
-    ],
-    "sessionId": "session-unique-id",
-    "error": null
-  }
-  ```
-
-### 2. Streaming Chat (`POST /api/chat/stream`)
-Uses Server-Sent Events (SSE). Emits:
-- `event: status` -> `{ "status": "using_tool" | "synthesizing" }`
-- `event: token`  -> `{ "token": "string" }`
-- `event: done`   -> Complete `AgentResponse` JSON object
-
-### 3. Hardware Health & Telemetry (`GET /api/health`)
-Returns real-time operating system metrics, queue depth, and active session counts:
-```json
-{
-  "status": "healthy",
-  "platform": "linux",
-  "uptime": 12450,
-  "memory": {
-    "totalMB": 4096,
-    "freeMB": 2150,
-    "usedMB": 1946,
-    "usagePercent": 47.5
-  },
-  "queue": {
-    "pending": 0,
-    "active": 1,
-    "totalProcessed": 84
-  },
-  "sessions": {
-    "activeCount": 3
-  }
-}
+```text
+Local-AI-Agent/
+├── docs/                               # เอกสารข้อกำหนดและคู่มือสถาปัตยกรรม
+│   ├── PROJECT_CONTEXT.md              # สถาปัตยกรรมระบบและพิมพ์เขียวฉบับหลัก
+│   ├── AGENT_API_CONTRACT.md           # สัญญาข้อกำหนด API (Version 2.0.0)
+│   ├── PI_RUNBOOK.md                   # คู่มือการติดตั้ง ZRAM และ Systemd บน Raspberry Pi 5
+│   ├── AGENT_RULES.md                  # กฎเหล็กเชิงวิศวกรรม (Zero Emojis, Restrained Typography)
+│   ├── OLLAMA_AGENT_SKILL.md           # แนวทางการปรับแต่งโมเดลขนาดเล็ก (Small LLM Logic)
+│   └── TOKEN_OPTIMIZATION_GUIDE.md     # คู่มือการบริหารจัดการ Context และลด Token
+├── AI-Agent/                           # แกนประมวลผล AI Agent (Deep Module)
+│   ├── index.js                        # จุดเชื่อมต่อหลัก ส่งออก runAgent() และ applyToolModePolicy()
+│   ├── agent.js                        # ตัวควบคุมหลัก (Pipeline: Recall -> Resolve -> Route -> Synthesize)
+│   ├── telemetry.js                    # ระบบคำนวณ Token และรวบรวมสถิติ Real-time (0 Disk Writes)
+│   ├── toolMode.js                     # ระบบควบคุมโหมดเครื่องมือ (auto, chat, search)
+│   ├── modelManager.js                 # ระบบสลับโมเดลแบบไดนามิก ปลอดภัยด้วย Sequential Unload
+│   ├── router.js                       # ระบบคัดกรองเจตนา 100% Deterministic (23 หมวดหมู่)
+│   ├── resolver.js                     # ระบบขยายคำถามต่อเนื่อง (Conversational Query Resolver)
+│   ├── answer.js                       # ระบบจัดรูปคำตอบและ Anti-Truncation ภาษาไทย
+│   ├── safety.js                       # ระบบตรวจสอบความปลอดภัยและเตือนสารพิษ/สิ่งผิดกฎหมาย
+│   ├── normalizer.js                   # ตัวแปลงคำย่อภาษาไทย, Slang, และโครงสร้าง Active/Passive SOV
+│   ├── memory.js                       # ระบบความจำเซสชัน (10 รอบ) และ Note Memory Ledger ใน RAM
+│   ├── culture.js                      # คลังมุกตลกไทย คำศัพท์วัยรุ่น และ Roleplay Persona
+│   ├── queue.js                        # FIFO RequestQueue ควบคุม Concurrency ป้องกันแรมล้น
+│   ├── server.js                       # Express Server ให้บริการ REST API และ SSE Streaming
+│   ├── ollamaClient.js                 # ตัวเชื่อมต่อ Ollama รองรับ Streaming, Abort, และ numCtx 4096
+│   ├── parse.js                        # ฟังก์ชันอ่าน JSON ปลอดภัย และ Sliding History Sanitizer
+│   ├── cli.js                          # สคริปต์สำหรับทดสอบคุยผ่าน Terminal
+│   ├── README.md                       # คู่มือประจำโมดูล AI Agent
+│   └── tools/                          # โฟลเดอร์รวบรวมเครื่องมือ Deterministic Tools
+│       ├── registry.js                 # ระบบลงทะเบียน ตรวจสอบสิทธิ์ และคุม Timeout
+│       ├── systemInfo.js               # เครื่องมือ get_system_info
+│       ├── time.js                     # เครื่องมือ get_current_time
+│       ├── calculator.js               # เครื่องมือ calculate
+│       ├── weather.js                  # เครื่องมือ get_weather
+│       ├── fx.js                       # เครื่องมือ get_fx
+│       ├── news.js                     # เครื่องมือ get_news
+│       ├── feedParser.js               # ตัวแปลง RSS/XML Feed ข่าว
+│       ├── github.js                   # เครื่องมือ search_github
+│       ├── wiki.js                     # เครื่องมือ search_wikipedia พร้อม Deep Passage Extraction
+│       ├── webSearch.js                # เครื่องมือ search_web แบบ Single Facade
+│       └── search/                     # โมดูลผู้ให้บริการสืบค้นเว็บ
+│           ├── tavily.js               # ผู้ให้บริการ Tavily API (AI-summarized)
+│           └── duckduckgo.js           # ผู้ให้บริการ DuckDuckGo HTML Lite (Zero-Key)
+├── Frontend/                           # หน้าต่างแชตและแอนิเมชันอวตาร
+│   ├── index.html                      # โครงสร้างหน้าเว็บ แผงควบคุม และ Telemetry Drawer
+│   ├── style.css                       # สไตล์ชีท Cyber-Minimalist รองรับ Responsive มือถือ
+│   ├── app.js                          # ตัวจัดการฝั่ง Client รองรับ SSE Streaming และ Real-time Meters
+│   └── ReadMe.md                       # คู่มือการทำงานของ Frontend
+├── .agents/                            # Local AI Agent Developer Skills
+│   └── skills/                         # codebase-design, small-llm-agent-logic, tdd, to-tickets, etc.
+├── tests/                              # ชุดทดสอบระบบอัตโนมัติ (290 tests, 71 suites ผ่าน 100%)
+│   ├── *.test.js                       # ชุดทดสอบ Unit & Integration ครบทุกโมดูล
+│   └── eval/                           # สคริปต์รัน Benchmark วัดความแม่นยำและประสิทธิภาพ
+├── package.json                        # Node.js Project Manifest (Pure ES Modules)
+├── .gitignore                          # ระเบียบความสะอาดของคลังโค้ด
+└── README.md                           # เอกสารฉบับนี้
 ```
 
-### 4. Session Management
-- `GET /api/chat/session/:sessionId`: Retrieves active session turns and focus entity.
-- `DELETE /api/chat/session/:sessionId`: Immediately frees memory for the specified session.
+---
+
+## 7. ผลการทดสอบและประสิทธิภาพ (Benchmarks & Quality Scorecard)
+
+ระบบผ่านการทดสอบอย่างเข้มงวดด้วยชุดทดสอบมาตรฐานของ Node.js (`node --test`) และชุดประเมิน Benchmark คุณภาพ:
+
+| ตัวชี้วัดการประเมิน | เกณฑ์เป้าหมาย | ผลลัพธ์ที่วัดได้จริง | สถานะ |
+| :--- | :--- | :--- | :--- |
+| **Unit & Integration Tests** | ผ่าน 100% | **284 ผ่าน / 6 ข้ามตามฮาร์ดแวร์จริง / 0 ล้มเหลว** (290 tests, 71 suites) | ผ่าน |
+| **Router Intent Accuracy** | >= 95.0% | **86 / 86 (100.0%)** ครอบคลุม 23 หมวดหมู่ | ผ่าน |
+| **Multi-Turn Recall Rate (10 รอบ)** | >= 90.0% | **27 / 27 (100.0%)** จดจำคำถามแรกและบริบทต่อเนื่องสมบูรณ์ | ผ่าน |
+| **Tool Mode Policy Accuracy** | 100.0% | **16 / 16 (100.0%)** ควบคุมการปิด/เปิดเครื่องมือถูกต้องทุกโหมด | ผ่าน |
+| **Truncation Defect Count** | 0 คำตอบ | **0 รายการ** (ไม่พบอาการประโยคขาดช่วงกลางคัน) | ผ่าน |
+| **MicroSD Card Writes** | 0 Bytes | **0 Bytes** (บันทึกข้อมูลเซสชันใน RAM ทั้งหมด) | ผ่าน |
+| **Node.js Memory Footprint (RSS)** | < 128 MB | **~41.0 MB** | ผ่าน |
+| **Ollama Resident RAM (Lite)** | < 1.5 GB | **~1.15 GB** (`qwen2.5:1.5b`) | ผ่าน |
+| **Ollama Resident RAM (Adv)** | < 2.5 GB | **~2.35 GB** (`qwen2.5:3b`) | ผ่าน |
 
 ---
 
-## 9. Documentation Index
+## 8. สรุปจุดเชื่อมต่อ API (API Endpoints Reference)
 
-- [docs/PROJECT_CONTEXT.md](file:///c:/Projects/Local-AI-Agent/docs/PROJECT_CONTEXT.md): Master specification and edge architecture blueprint.
-- [docs/AGENT_API_CONTRACT.md](file:///c:/Projects/Local-AI-Agent/docs/AGENT_API_CONTRACT.md): Integration contract between AI Agent, Backend, and Frontend.
-- [docs/PI_RUNBOOK.md](file:///c:/Projects/Local-AI-Agent/docs/PI_RUNBOOK.md): Complete Raspberry Pi 5 production setup and troubleshooting guide.
-- [docs/AGENT_RULES.md](file:///c:/Projects/Local-AI-Agent/docs/AGENT_RULES.md): Engineering standards and rules.
-- [docs/OLLAMA_AGENT_SKILL.md](file:///c:/Projects/Local-AI-Agent/docs/OLLAMA_AGENT_SKILL.md): Small LLM prompt design and edge inference optimization.
-- [docs/TOKEN_OPTIMIZATION_GUIDE.md](file:///c:/Projects/Local-AI-Agent/docs/TOKEN_OPTIMIZATION_GUIDE.md): Context window and token conservation strategies.
-- [AI-Agent/README.md](file:///c:/Projects/Local-AI-Agent/AI-Agent/README.md): Detailed AI Agent module guide.
-- [Frontend/ReadMe.md](file:///c:/Projects/Local-AI-Agent/Frontend/ReadMe.md): Frontend setup and mock mode instructions.
+| Method | Endpoint | หน้าที่และการทำงาน |
+| :--- | :--- | :--- |
+| `POST` | `/api/chat` | ส่งคำถามและรับคำตอบ JSON แบบซิงโครนัสรอบเดียว |
+| `POST` | `/api/chat/stream` | รับคำตอบแบบ Server-Sent Events (SSE) ทีละ Token พร้อมอัปเดตสถานะและข้อมูล Telemetry |
+| `GET` | `/api/model/status` | ตรวจสอบโหมดโมเดลปัจจุบัน (`lite`/`advanced`), สถานะแรม, และชื่อโมเดลที่อยู่ใน RAM |
+| `POST` | `/api/model/switch` | สลับโหมดโมเดล AI อย่างปลอดภัย (`{ "mode": "lite" \| "advanced" }`) |
+| `GET` | `/api/tools/status` | ตรวจสอบโหมดเครื่องมือที่รองรับ และสถานะการกำหนดค่าของ Tavily API Key |
+| `GET` | `/api/chat/session/:id` | ดึงประวัติการสนทนา, Focus Entity, และสรุปสถิติ Token ของเซสชันนั้นๆ |
+| `DELETE`| `/api/chat/session/:id` | ล้างประวัติการสนทนาและคืนหน่วยความจำของเซสชันทันที (เรียกใช้เมื่อกดแชตใหม่) |
+| `GET` | `/api/health` | ตรวจสอบสถานะการทำงานของฮาร์ดแวร์ Raspberry Pi 5, แรม, คิวงาน, และจำนวนเซสชัน |
+
+---
+
+## 9. สารบัญเอกสารเชิงลึก (Documentation Index)
+
+- [AI-Agent/README.md](file:///c:/Projects/Local-AI-Agent/AI-Agent/README.md): เอกสารเชิงลึกของโมดูล AI Agent, สถาปัตยกรรม ReAct, และระบบ Telemetry
+- [Frontend/ReadMe.md](file:///c:/Projects/Local-AI-Agent/Frontend/ReadMe.md): คู่มือส่วนแสดงผลหน้าเว็บ, การเชื่อมต่อ SSE, แผงวัดสถิติ Token, และ Mock Mode
+- [docs/PROJECT_CONTEXT.md](file:///c:/Projects/Local-AI-Agent/docs/PROJECT_CONTEXT.md): พิมพ์เขียวสถาปัตยกรรมระบบฉบับหลักสำหรับทีมพัฒนา
+- [docs/AGENT_API_CONTRACT.md](file:///c:/Projects/Local-AI-Agent/docs/AGENT_API_CONTRACT.md): สัญญาข้อกำหนด API (Payload Schema และ SSE Events)
+- [docs/PI_RUNBOOK.md](file:///c:/Projects/Local-AI-Agent/docs/PI_RUNBOOK.md): คู่มือการตั้งค่า ZRAM, Systemd, และการระบายความร้อนบน Raspberry Pi 5
+- [docs/AGENT_RULES.md](file:///c:/Projects/Local-AI-Agent/docs/AGENT_RULES.md): รัฐธรรมนูญวิศวกรรม (Zero Emojis, Restrained Typography, Git Governance)
+- [docs/TOKEN_OPTIMIZATION_GUIDE.md](file:///c:/Projects/Local-AI-Agent/docs/TOKEN_OPTIMIZATION_GUIDE.md): คู่มือและกลยุทธ์การบริหารจัดการ Token บนอุปกรณ์เอดจ์
+- [docs/OLLAMA_AGENT_SKILL.md](file:///c:/Projects/Local-AI-Agent/docs/OLLAMA_AGENT_SKILL.md): หลักการวิศวกรรมสำหรับโมเดลภาษาขนาดเล็ก (Small LLM Logic)
