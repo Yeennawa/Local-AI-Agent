@@ -192,12 +192,63 @@ export class SessionMemory {
         turns: [],
         focusEntity: null,
         firstQuery: null,
-        lastActive: Date.now()
+        lastActive: Date.now(),
+        usage: {
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          llmCalls: 0,
+          deterministicTurns: 0,
+          totalTurns: 0
+        }
       };
       this.sessions.set(sessionId, session);
     }
     session.lastActive = Date.now();
     return session;
+  }
+
+  recordUsage(sessionId, { promptTokens = 0, completionTokens = 0, isDeterministic = false } = {}) {
+    if (!sessionId) return null;
+    const session = this._getOrCreateSession(sessionId);
+    const p = Number(promptTokens) || 0;
+    const c = Number(completionTokens) || 0;
+
+    session.usage.promptTokens += p;
+    session.usage.completionTokens += c;
+    session.usage.totalTokens += p + c;
+    session.usage.totalTurns += 1;
+    if (isDeterministic) {
+      session.usage.deterministicTurns += 1;
+    } else {
+      session.usage.llmCalls += 1;
+    }
+
+    return { ...session.usage };
+  }
+
+  getUsageSummary(sessionId, { maxContextChars = 2400, maxTokens = 4096 } = {}) {
+    const session = this.sessions.get(sessionId);
+    const sessionTotal = session?.usage
+      ? { ...session.usage }
+      : { promptTokens: 0, completionTokens: 0, totalTokens: 0, llmCalls: 0, deterministicTurns: 0, totalTurns: 0 };
+
+    const turns = session?.turns || [];
+    let contextCharsUsed = 0;
+    for (const t of turns) {
+      contextCharsUsed += (t.userQuery?.length || 0) + (t.assistantText?.length || 0);
+    }
+
+    const contextWindowStats = {
+      maxTokens,
+      historyTurnsUsed: turns.length,
+      maxHistoryTurns: this.maxTurns,
+      contextCharsUsed,
+      maxContextChars,
+      focusEntity: session?.focusEntity || null
+    };
+
+    return { sessionTotal, contextWindowStats };
   }
 
   recordTurn(sessionId, { userQuery, assistantText = '', toolUsed = null, focusEntity = null, isMeta = false }) {

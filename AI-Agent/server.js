@@ -239,14 +239,19 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
     if (sessionId) {
       sessionMemory.clearSession(sessionId);
     }
-    return res.json({ success: true, message: `Session ${sessionId} cleared` });
+    return res.json({
+      success: true,
+      message: `Session ${sessionId} cleared`,
+      usage: sessionMemory.getUsageSummary(sessionId)
+    });
   });
 
   app.get('/api/chat/session/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     const history = sessionMemory.getHistory(sessionId);
     const focusEntity = sessionMemory.getFocusEntity(sessionId);
-    return res.json({ sessionId, history, focusEntity });
+    const usage = sessionMemory.getUsageSummary(sessionId);
+    return res.json({ sessionId, history, focusEntity, usage });
   });
 
   app.use((err, _req, res, next) => {

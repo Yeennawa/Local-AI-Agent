@@ -15,6 +15,12 @@ import {
 } from './answer.js';
 import { getSafetyKnowledgeHint } from './safety.js';
 import { applyToolModePolicy, normalizeToolMode } from './toolMode.js';
+import {
+  estimateTokens,
+  estimateMessagesTokens,
+  buildUsagePayload,
+  DEFAULT_MAX_CONTEXT_TOKENS
+} from './telemetry.js';
 
 const MAX_PLAIN_REPLY_CHARS = 2400;
 const ANSWER_TOKENS_LITE = 600;
@@ -35,7 +41,7 @@ export function sanitizeAnswerText(text, userMessage = '', defaultSummary = '') 
   return polishAnswerText(text, userMessage, defaultSummary);
 }
 
-async function synthesizeAnswer({ model, chatFn, history, message, cleanContext, personaPrompt, onToken }) {
+async function synthesizeAnswer({ model, chatFn, history, message, cleanContext, personaPrompt, onToken, onStatus }) {
   const activeLabel = /3b/i.test(model) ? 'Qwen2.5 3B (Advanced Mode)' : 'Qwen2.5 1.5B (Lite Mode)';
   let systemContent = `คุณคือ Max ผู้ช่วย AI บน Raspberry Pi (ขณะนี้ทำงานด้วยโมเดล ${activeLabel})\n${SYSTEM_ASSISTANT_PROMPT}`;
   if (personaPrompt) {
@@ -51,9 +57,16 @@ async function synthesizeAnswer({ model, chatFn, history, message, cleanContext,
     { role: 'user', content: message }
   ];
 
+  const estimatedPromptTokens = estimateMessagesTokens(messages);
+  onStatus?.({
+    status: 'synthesizing',
+    estimatedPromptTokens,
+    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS
+  });
+
   const numPredict = /3b/i.test(model) ? ANSWER_TOKENS_ADVANCED : ANSWER_TOKENS_LITE;
 
-  return queryOllama({
+  const res = await queryOllama({
     model,
     chatFn,
     messages,
@@ -63,6 +76,12 @@ async function synthesizeAnswer({ model, chatFn, history, message, cleanContext,
     returnDetails: true,
     onToken
   });
+
+  const rawText = typeof res === 'string' ? res : (res?.text || '');
+  const meta = typeof res === 'object' ? res?.meta : null;
+  const doneReason = typeof res === 'object' ? res?.doneReason : 'stop';
+
+  return { text: rawText, meta, doneReason, estimatedPromptTokens };
 }
 
 export async function runAgent({ message, conversationHistory = [], sessionId = null, options = {} }) {
@@ -83,6 +102,48 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
   const activeModelLabel = /3b/i.test(model) ? 'Qwen2.5 3B' : 'Qwen2.5 1.5B';
   const activeMode = /3b/i.test(model) ? 'advanced' : 'lite';
+  const startTime = Date.now();
+
+  const createUsage = ({ promptTokens = 0, completionTokens = 0, isDeterministic = false, durationMsOverride = null } = {}) => {
+    const durationMs = durationMsOverride ?? (Date.now() - startTime);
+    let sessionStats;
+    let contextWindowStats;
+
+    if (effectiveSessionId) {
+      sessionStats = sessionMemory.recordUsage(effectiveSessionId, { promptTokens, completionTokens, isDeterministic });
+      const summary = sessionMemory.getUsageSummary(effectiveSessionId, { maxTokens: DEFAULT_MAX_CONTEXT_TOKENS });
+      contextWindowStats = summary.contextWindowStats;
+    } else {
+      sessionStats = {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        llmCalls: isDeterministic ? 0 : 1,
+        deterministicTurns: isDeterministic ? 1 : 0,
+        totalTurns: 1
+      };
+      contextWindowStats = {
+        maxTokens: DEFAULT_MAX_CONTEXT_TOKENS,
+        historyTurnsUsed: 0,
+        maxHistoryTurns: 10,
+        contextCharsUsed: 0,
+        maxContextChars: 2400,
+        focusEntity: null
+      };
+    }
+
+    return buildUsagePayload({
+      model,
+      modelLabel: activeModelLabel,
+      mode: activeMode,
+      promptTokens,
+      completionTokens,
+      durationMs,
+      isDeterministic,
+      sessionStats,
+      contextWindowStats
+    });
+  };
 
   // 1. Zero-Token Lexical Meta-Recall (e.g. "คำถามแรกคืออะไร")
   if (effectiveSessionId) {
@@ -95,6 +156,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         isMeta: true
       });
       onToken?.(metaAnswer);
+      const usage = createUsage({ promptTokens: 0, completionTokens: 0, isDeterministic: true });
       return {
         text: metaAnswer,
         status: 'idle',
@@ -104,7 +166,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         error: null,
         model,
         modelLabel: activeModelLabel,
-        mode: activeMode
+        mode: activeMode,
+        usage
       };
     }
   }
@@ -123,6 +186,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       });
     }
     onToken?.(cachedNote.answer);
+    const usage = createUsage({ promptTokens: 0, completionTokens: 0, isDeterministic: true });
     return {
       text: cachedNote.answer,
       status: 'idle',
@@ -132,7 +196,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       error: null,
       model,
       modelLabel: activeModelLabel,
-      mode: activeMode
+      mode: activeMode,
+      usage
     };
   }
 
@@ -171,6 +236,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       });
     }
     onToken?.(text);
+    const usage = createUsage({ promptTokens: 0, completionTokens: 0, isDeterministic: true });
     return {
       text,
       status: 'idle',
@@ -180,7 +246,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       error: null,
       model,
       modelLabel: activeModelLabel,
-      mode: activeMode
+      mode: activeMode,
+      usage
     };
   };
 
@@ -253,7 +320,6 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       cleanContext = cleanContext ? `${cleanContext}\n\n${safetyHint}` : safetyHint;
     }
 
-    onStatus?.({ status: 'synthesizing' });
     const synthesized = await synthesizeAnswer({
       model,
       chatFn,
@@ -307,6 +373,19 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
     }
 
     const activeNotice = toolsUsed.find((t) => t.result?.notice)?.result?.notice || null;
+    const durationMs = Date.now() - startTime;
+    const promptTokens = (typeof meta?.prompt_eval_count === 'number' && meta.prompt_eval_count > 0)
+      ? meta.prompt_eval_count
+      : (synthesized?.estimatedPromptTokens || estimateTokens(effectiveMessage));
+    const completionTokens = (typeof meta?.eval_count === 'number' && meta.eval_count > 0)
+      ? meta.eval_count
+      : estimateTokens(finalText);
+    const usage = createUsage({
+      promptTokens,
+      completionTokens,
+      isDeterministic: false,
+      durationMsOverride: durationMs
+    });
 
     return {
       text: finalText,
@@ -318,16 +397,22 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       model,
       modelLabel: activeModelLabel,
       mode: activeMode,
-      meta: meta || undefined
+      meta: meta || undefined,
+      usage
     };
   } catch (error) {
+    const usage = createUsage({ promptTokens: 0, completionTokens: 0, isDeterministic: true });
     return {
       text: 'ขออภัยครับ ขณะนี้ระบบ AI ประมวลผลติดขัด กรุณาลองใหม่อีกครั้ง',
       status: 'error',
       feeling: 'confused',
       toolsUsed,
       notice: null,
-      error: error.message || 'Unknown agent error'
+      error: error.message || 'Unknown agent error',
+      model,
+      modelLabel: activeModelLabel,
+      mode: activeMode,
+      usage
     };
   }
 }
