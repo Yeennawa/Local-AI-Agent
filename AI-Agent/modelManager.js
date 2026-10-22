@@ -138,8 +138,12 @@ export class ModelManager {
     if (targetMode === this.mode && this.state === 'ready') {
       return {
         success: true,
+        previousMode: this.mode,
         mode: this.mode,
+        currentMode: this.mode,
         model: this.getCurrentModel(),
+        label: MODEL_MODES[this.mode].label,
+        estimatedRamMB: MODEL_MODES[this.mode].estimatedRamMB,
         message: `ระบบอยู่ในโหมด ${MODEL_MODES[this.mode].label} อยู่แล้ว`
       };
     }
@@ -226,7 +230,9 @@ export class ModelManager {
 
       return {
         success: true,
+        previousMode,
         mode: this.mode,
+        currentMode: this.mode,
         model: targetConfig.model,
         label: targetConfig.label,
         estimatedRamMB: targetConfig.estimatedRamMB

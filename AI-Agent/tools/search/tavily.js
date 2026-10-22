@@ -11,8 +11,9 @@ let cachedApiKey = undefined;
 export function getTavilyApiKey() {
   if (cachedApiKey !== undefined) return cachedApiKey;
 
-  if (process.env.TAVILY_API_KEY && process.env.TAVILY_API_KEY.trim()) {
-    cachedApiKey = process.env.TAVILY_API_KEY.trim();
+  if (process.env.TAVILY_API_KEY !== undefined) {
+    const fromEnv = process.env.TAVILY_API_KEY ? process.env.TAVILY_API_KEY.trim() : '';
+    cachedApiKey = fromEnv || null;
     return cachedApiKey;
   }
 
@@ -44,8 +45,8 @@ export function isTavilyConfigured() {
   return Boolean(getTavilyApiKey());
 }
 
-export function resetCachedTavilyApiKey() {
-  cachedApiKey = undefined;
+export function resetCachedTavilyApiKey(override = undefined) {
+  cachedApiKey = override;
 }
 
 export async function searchTavily({ query, signal, maxResults = 3, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS } = {}) {

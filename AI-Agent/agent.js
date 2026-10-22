@@ -73,6 +73,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const onStatus = typeof options.onStatus === 'function' ? options.onStatus : null;
   const onToken = typeof options.onToken === 'function' ? options.onToken : null;
   const toolMode = normalizeToolMode(options.toolMode);
+  const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
+  const activeModelLabel = /3b/i.test(model) ? 'Qwen2.5 3B' : 'Qwen2.5 1.5B';
+  const activeMode = /3b/i.test(model) ? 'advanced' : 'lite';
 
   // 1. Zero-Token Lexical Meta-Recall (e.g. "คำถามแรกคืออะไร")
   if (effectiveSessionId) {
@@ -91,13 +94,18 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         feeling: 'happy',
         toolsUsed: [],
         notice: null,
-        error: null
+        error: null,
+        model,
+        modelLabel: activeModelLabel,
+        mode: activeMode
       };
     }
   }
 
   // 2. Note Memory Ledger Recall (Instant recall of previously verified questions)
-  const cachedNote = sessionMemory.noteLedger.recallNote(message, effectiveSessionId);
+  // Skip recall for queries checking active model identity to avoid stale cached identity across mode switches
+  const isIdentityCheck = /(?:โมเดล|model|qwen|1\.5b|3b|lite|advanced)/i.test(message);
+  const cachedNote = !isIdentityCheck ? sessionMemory.noteLedger.recallNote(message, effectiveSessionId) : null;
   if (cachedNote && cachedNote.answer) {
     if (effectiveSessionId) {
       sessionMemory.recordTurn(effectiveSessionId, {
@@ -114,12 +122,14 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       feeling: 'happy',
       toolsUsed: cachedNote.sourceTool ? [{ tool: cachedNote.sourceTool, params: {}, result: { fromNote: true }, durationMs: 0 }] : [],
       notice: null,
-      error: null
+      error: null,
+      model,
+      modelLabel: activeModelLabel,
+      mode: activeMode
     };
   }
 
   const toolsUsed = [];
-  const model = options.model || process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
   const chatFn = options.chatFn;
 
   // Single source of truth for conversation history:
@@ -154,7 +164,17 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       });
     }
     onToken?.(text);
-    return { text, status: 'idle', feeling, toolsUsed, notice: activeNotice, error: null };
+    return {
+      text,
+      status: 'idle',
+      feeling,
+      toolsUsed,
+      notice: activeNotice,
+      error: null,
+      model,
+      modelLabel: activeModelLabel,
+      mode: activeMode
+    };
   };
 
   try {
@@ -288,6 +308,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       toolsUsed,
       notice: activeNotice,
       error: null,
+      model,
+      modelLabel: activeModelLabel,
+      mode: activeMode,
       meta: meta || undefined
     };
   } catch (error) {

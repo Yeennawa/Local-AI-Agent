@@ -181,8 +181,10 @@ async function handleModeSwitch(targetMode) {
     switchingBubble.remove();
 
     if (res.ok && data.success) {
-      updateModelUI(data.currentMode || targetMode);
-      appendBubble("system", "สลับสู่ " + (data.currentMode === "advanced" ? "Advanced Mode (3B)" : "Lite Mode (1.5B)") + " สำเร็จแล้ว");
+      const resolvedMode = data.mode || data.currentMode || targetMode;
+      const modeLabel = data.label || (resolvedMode === "advanced" ? "Advanced Mode (3B)" : "Lite Mode (1.5B)");
+      updateModelUI(resolvedMode);
+      appendBubble("system", "สลับสู่ " + modeLabel + " สำเร็จแล้ว");
     } else {
       const errMsg = data.error || "ไม่สามารถสลับโหมดได้";
       updateModelUI(currentModelMode, "Error", "error");
@@ -283,9 +285,10 @@ async function handleSubmit(event) {
       showNoticeBanner(reply.notice.message);
     }
 
-    // Attach permanent badge if tools were used or retrieved from memory
-    if (reply?.toolsUsed?.length > 0 && assistantBubble) {
-      const toolNames = reply.toolsUsed
+    // Attach model and tool metadata badge to assistant bubble
+    if (assistantBubble) {
+      const activeModelLabel = reply?.modelLabel || (currentModelMode === "advanced" ? "Qwen2.5 3B" : "Qwen2.5 1.5B");
+      const toolNames = (reply?.toolsUsed || [])
         .filter(function (t) { return t.tool; })
         .map(function (t) {
           if (t.result?.fromNote) return "คลังความจำ (0ms)";
@@ -293,12 +296,16 @@ async function handleSubmit(event) {
           const time = t.durationMs !== undefined ? ` (${(t.durationMs / 1000).toFixed(1)}s)` : '';
           return `${name}${time}`;
         });
+
+      const badgeParts = [`โมเดล: ${activeModelLabel}`];
       if (toolNames.length > 0) {
-        const badge = document.createElement("div");
-        badge.className = "tool-used-badge";
-        badge.textContent = `[ ใช้เครื่องมือ: ${toolNames.join(", ")} ]`;
-        assistantBubble.appendChild(badge);
+        badgeParts.push(`ใช้เครื่องมือ: ${toolNames.join(", ")}`);
       }
+
+      const badge = document.createElement("div");
+      badge.className = "tool-used-badge";
+      badge.textContent = `[ ${badgeParts.join(" | ")} ]`;
+      assistantBubble.appendChild(badge);
     }
 
     setAvatarFeeling(reply?.feeling || "neutral");
