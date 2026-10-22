@@ -1,7 +1,7 @@
 // DuckDuckGo Search Provider for Local AI Agent
 // Clean provider function returning normalized { success, results } without tool wrapper.
 
-const DEFAULT_FETCH_TIMEOUT_MS = 3000;
+const DEFAULT_FETCH_TIMEOUT_MS = 5500;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
 export function decodeHtmlEntities(text) {

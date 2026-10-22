@@ -7,11 +7,11 @@ import { searchDuckDuckGo, parseDuckDuckGoHtml, decodeHtmlEntities } from './sea
 
 export { parseDuckDuckGoHtml, decodeHtmlEntities };
 
-const MAX_SEARCH_RESULTS = 3;
-const MAX_SUMMARY_CHARS = 550;
+const MAX_SEARCH_RESULTS = 5;
+const MAX_SUMMARY_CHARS = 1500;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const MAX_CACHE_ENTRIES = 100;
-const WIKI_FALLBACK_TIMEOUT_MS = 1800;
+const WIKI_FALLBACK_TIMEOUT_MS = 2500;
 
 const searchCache = new Map();
 
@@ -62,7 +62,7 @@ async function searchWikipediaFallback(query, timeoutMs = WIKI_FALLBACK_TIMEOUT_
 export const webSearchTool = {
   name: 'search_web',
   description: 'Search the web for real-time information, everyday practical questions, how-tos, slang, and cultural queries.',
-  timeoutMs: 8000,
+  timeoutMs: 12000,
   parameters: {
     type: 'object',
     properties: {
@@ -137,7 +137,9 @@ export const webSearchTool = {
     const snippetLines = results.map((r, i) => `[แหล่งที่ ${i + 1}: ${r.title}] ${r.snippet}`);
     let summary = snippetLines.join('\n');
     if (summary.length > MAX_SUMMARY_CHARS) {
-      summary = `${summary.slice(0, MAX_SUMMARY_CHARS)}...`;
+      const slice = summary.slice(0, MAX_SUMMARY_CHARS);
+      const lastBreak = Math.max(slice.lastIndexOf('\n'), slice.lastIndexOf(' '));
+      summary = lastBreak > MAX_SUMMARY_CHARS * 0.7 ? `${slice.slice(0, lastBreak).trim()}...` : `${slice.trim()}...`;
     }
 
     const payload = {

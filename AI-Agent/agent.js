@@ -16,11 +16,15 @@ import {
 import { getSafetyKnowledgeHint } from './safety.js';
 import { applyToolModePolicy, normalizeToolMode } from './toolMode.js';
 
-const MAX_PLAIN_REPLY_CHARS = 600;
-const ANSWER_TOKENS = 256;
+const MAX_PLAIN_REPLY_CHARS = 2400;
+const ANSWER_TOKENS_LITE = 600;
+const ANSWER_TOKENS_ADVANCED = 768;
 
 function clip(text, max) {
-  return text.length > max ? `${text.slice(0, max)}...` : text;
+  if (!text || text.length <= max) return text;
+  const slice = text.slice(0, max);
+  const lastBreak = Math.max(slice.lastIndexOf('\n'), slice.lastIndexOf(' '));
+  return lastBreak > max * 0.7 ? `${slice.slice(0, lastBreak).trim()}...` : `${slice.trim()}...`;
 }
 
 /**
@@ -47,12 +51,15 @@ async function synthesizeAnswer({ model, chatFn, history, message, cleanContext,
     { role: 'user', content: message }
   ];
 
+  const numPredict = /3b/i.test(model) ? ANSWER_TOKENS_ADVANCED : ANSWER_TOKENS_LITE;
+
   return queryOllama({
     model,
     chatFn,
     messages,
     temperature: cleanContext ? 0.1 : 0.3,
-    numPredict: ANSWER_TOKENS,
+    numCtx: Number(process.env.OLLAMA_NUM_CTX) || 4096,
+    numPredict,
     returnDetails: true,
     onToken
   });
@@ -137,7 +144,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const rawHistory = effectiveSessionId
     ? sessionMemory.getAssembledContext(effectiveSessionId)
     : (Array.isArray(conversationHistory) && conversationHistory.length > 0 ? conversationHistory : []);
-  const history = sanitizeHistory(rawHistory);
+  const history = sanitizeHistory(rawHistory, 10, 1200);
 
   const prevTurns = effectiveSessionId ? sessionMemory.getHistory(effectiveSessionId) : [];
   const lastTurn = prevTurns.filter((t) => !t.isMeta).at(-1);

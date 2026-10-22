@@ -1,7 +1,7 @@
 import ollama from 'ollama';
 
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
-const DEFAULT_TIMEOUT_MS = 25000;
+const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '2m';
 
 // Pi 5 has 4 cores. Leave one for node and the OS, and keep the KV cache small.
@@ -16,11 +16,12 @@ export async function queryOllama({
   messages,
   format = undefined,
   model = DEFAULT_MODEL,
+  numCtx = NUM_CTX,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   stallTimeoutMs = undefined,
-  maxTimeoutMs = 120000,
+  maxTimeoutMs = 180000,
   temperature = 0.2,
-  numPredict = 256,
+  numPredict = 600,
   repeatPenalty = 1.18,
   topP = 0.9,
   chatFn = defaultChat,
@@ -64,7 +65,7 @@ export async function queryOllama({
         temperature,
         top_p: topP,
         repeat_penalty: repeatPenalty,
-        num_ctx: NUM_CTX,
+        num_ctx: numCtx,
         num_thread: NUM_THREAD,
         num_predict: numPredict
       },

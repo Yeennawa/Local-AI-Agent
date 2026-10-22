@@ -2,7 +2,7 @@ const USE_MOCK_API = false;
 const USE_STREAMING = true;
 const API_URL = "/api/chat";
 const STREAM_API_URL = "/api/chat/stream";
-const API_TIMEOUT = 60000;
+const API_TIMEOUT = 120000;
 const FEELINGS = ["happy", "neutral", "surprised", "confused", "proud"];
 
 // Keep turn history in tab memory so the Express server stays stateless across requests.
@@ -378,7 +378,7 @@ async function sendStreamMessageToBackend(prompt, { onStatus, onToken } = {}) {
         message: prompt,
         sessionId: currentSessionId,
         toolMode: currentToolMode,
-        conversationHistory: history.slice(-4)
+        conversationHistory: history.slice(-10)
       }),
       signal: controller.signal
     });
@@ -461,7 +461,7 @@ async function sendMessageToBackend(prompt) {
         message: prompt,
         sessionId: currentSessionId,
         toolMode: currentToolMode,
-        conversationHistory: history.slice(-4)
+        conversationHistory: history.slice(-10)
       }),
       signal: controller.signal
     });

@@ -280,7 +280,7 @@ export class SessionMemory {
     return null;
   }
 
-  getAssembledContext(sessionId, { maxChars = 800, maxDialogueTurns = 2 } = {}) {
+  getAssembledContext(sessionId, { maxChars = 2400, maxDialogueTurns = 4 } = {}) {
     const session = this.sessions.get(sessionId);
     if (!session || session.turns.length === 0) return [];
 
@@ -292,7 +292,7 @@ export class SessionMemory {
       const olderTurns = turns.slice(0, turns.length - maxDialogueTurns);
       const summaryItems = olderTurns.map((t) => {
         const toolInfo = t.toolUsed ? ` (${t.toolUsed})` : '';
-        const answerSnippet = t.assistantText.length > 50 ? `${t.assistantText.slice(0, 50)}...` : t.assistantText;
+        const answerSnippet = t.assistantText.length > 160 ? `${t.assistantText.slice(0, 160)}...` : t.assistantText;
         return `• ถาม: "${t.userQuery}" -> ตอบย่อ: "${answerSnippet}"${toolInfo}`;
       });
       const summaryContent = `[สรุปหัวข้อที่เคยคุยก่อนหน้านี้]:\n${summaryItems.join('\n')}`;

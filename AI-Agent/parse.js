@@ -1,6 +1,5 @@
 const FEELINGS = ['happy', 'neutral', 'surprised', 'confused', 'proud'];
 const HISTORY_LIMIT = 4;
-// a long old message is worth less than the room it takes in a 1536 token window
 const HISTORY_CHARS = 500;
 
 function tryParseObject(text) {
@@ -79,7 +78,7 @@ export function normalizeFeeling(value, fallback) {
   return FEELINGS.includes(value) ? value : fallback;
 }
 
-export function sanitizeHistory(history) {
+export function sanitizeHistory(history, limit = HISTORY_LIMIT, maxChars = HISTORY_CHARS) {
   if (!Array.isArray(history)) return [];
 
   return history
@@ -90,6 +89,6 @@ export function sanitizeHistory(history) {
         typeof m.content === 'string' &&
         m.content.trim()
     )
-    .slice(-HISTORY_LIMIT)
-    .map((m) => ({ role: m.role, content: m.content.slice(0, HISTORY_CHARS) }));
+    .slice(-limit)
+    .map((m) => ({ role: m.role, content: m.content.slice(0, maxChars) }));
 }

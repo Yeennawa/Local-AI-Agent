@@ -6,11 +6,11 @@
 
 import { isFalselyPositiveAnswer } from './safety.js';
 
-export const SYSTEM_ASSISTANT_PROMPT = `คุณคือ Max ผู้ช่วย AI สั้น กระชับ และเป็นกันเอง ทำงานบน Raspberry Pi
+export const SYSTEM_ASSISTANT_PROMPT = `คุณคือ Max ผู้ช่วย AI ที่ฉลาด รอบคอบ และเป็นกันเอง ทำงานบน Raspberry Pi
 แนวทางการตอบ:
-- ตอบเป็นภาษาไทยธรรมชาติ ความยาว 1-3 ประโยค
+- ตอบเป็นภาษาไทยธรรมชาติที่เข้าใจง่าย อธิบายให้ครบถ้วนสมบูรณ์และจบประโยคอย่างชัดเจน
 - ตอบตรงประเด็นจากข้อมูลที่ให้ ห้ามแต่งเรื่อง ห้ามคาดเดาข้อมูลสดหรือวันที่เอง
-- ห้ามใส่คำว่า "แหล่งข้อมูล", "แหล่งที่มา", หรือใส่เลขข้อ 1. 2. 3.
+- ห้ามใส่คำว่า "แหล่งข้อมูล", "แหล่งที่มา", หรือ "[แหล่งที่ ...]"
 - หากไม่มีข้อมูล ให้ตอบอย่างสุภาพว่าไม่พบข้อมูล`;
 
 /**
@@ -148,7 +148,8 @@ export function polishAnswerText(text, userMessage = '', referenceText = '') {
   cleaned = cleaned
     .replace(/\[\s*แหล่ง(?:ข้อมูล|ที่)\s*(?:ที่)?\s*\d+[^\]]*\]:?/gi, '')
     .replace(/(?:^|\n|\s)แหล่ง(?:ข้อมูล|ที่)\s*(?:ที่)?\s*\d+[:\s]*/gi, ' ')
-    .replace(/\s{2,}/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
   // 2. Question verbatim echo guard
@@ -164,33 +165,47 @@ export function polishAnswerText(text, userMessage = '', referenceText = '') {
     return cleanExtractiveText(referenceText);
   }
 
-  // 4. Consecutive repeated sentence deduplication
-  const rawParts = cleaned.split(/(?<=[.!?\n])\s+|\s+/);
-  const deduped = [];
-  for (let i = 0; i < rawParts.length; i++) {
-    const part = rawParts[i].trim();
-    if (!part) continue;
-    if (i === 0 || part !== rawParts[i - 1].trim()) {
-      deduped.push(part);
+  // 4. Consecutive repeated sentence and paragraph deduplication
+  const paragraphs = cleaned.split(/\n+/);
+  const processedParagraphs = [];
+
+  for (const para of paragraphs) {
+    const trimmedPara = para.trim();
+    if (!trimmedPara) continue;
+
+    let dedupedPara = trimmedPara;
+    const clauseMatch = dedupedPara.match(/(.{8,}?)\s+\1(?:\s+|$)/);
+    if (clauseMatch && clauseMatch[1]) {
+      dedupedPara = dedupedPara.replace(clauseMatch[0], clauseMatch[1] + (clauseMatch[0].endsWith(' ') ? ' ' : ''));
+    }
+
+    if (processedParagraphs.length === 0 || dedupedPara !== processedParagraphs[processedParagraphs.length - 1]) {
+      processedParagraphs.push(dedupedPara);
     }
   }
-  cleaned = deduped.join(' ');
 
-  // 5. Trim dangling incomplete sentence if clipped at token boundary
-  if (cleaned.length > 50 && !/[.!?।ฯ\n]$/.test(cleaned)) {
+  cleaned = processedParagraphs.join('\n\n').trim();
+
+  // 5. Trim dangling incomplete sentence if clipped mid-word/mid-sentence after punctuation
+  const THAI_SENTENCE_ENDINGS = /(?:ครับ|ค่ะ|จ้า|นะ|ครับผม|นะคะ|เลยครับ|เช่นกันครับ|นั่นเอง|เป็นต้น|อย่างยิ่ง|โดยสิ้นเชิง|[.!?।ฯ\n])$/;
+  const THAI_ABBR_REGEX = /(?:พ\.ศ\.|ค\.ศ\.|ดร\.|พ\.ร\.บ\.|จ\.|อ\.|ต\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.)$/;
+
+  if (cleaned.length > 50 && !THAI_SENTENCE_ENDINGS.test(cleaned)) {
     const lastPunct = Math.max(
       cleaned.lastIndexOf('. '),
       cleaned.lastIndexOf('.\n'),
       cleaned.lastIndexOf('! '),
-      cleaned.lastIndexOf('? '),
-      cleaned.lastIndexOf('\n')
+      cleaned.lastIndexOf('? ')
     );
-    if (lastPunct > 0 && lastPunct >= cleaned.length * 0.5) {
-      cleaned = cleaned.slice(0, lastPunct + 1).trim();
+    if (lastPunct > 0 && lastPunct >= cleaned.length * 0.4) {
+      const candidate = cleaned.slice(0, lastPunct + 1).trim();
+      if (!THAI_ABBR_REGEX.test(candidate)) {
+        cleaned = candidate;
+      }
     }
   }
 
-  return cleaned.trim();
+  return cleaned;
 }
 
 

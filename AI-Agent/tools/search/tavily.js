@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_FETCH_TIMEOUT_MS = 3000;
+const DEFAULT_FETCH_TIMEOUT_MS = 5500;
 let cachedApiKey = undefined;
 
 export function getTavilyApiKey() {
