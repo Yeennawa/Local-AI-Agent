@@ -129,13 +129,13 @@
           <div class="telemetry-card">
             <div class="card-header">
               <span class="card-label">ความจำในเซสชัน (Sliding Memory)</span>
-              <span class="card-value" id="memory-turns-text">0 / 10 รอบ</span>
+              <span class="card-value" id="memory-turns-text">0 / 30 รอบ</span>
             </div>
             <div class="meter-track">
               <div class="meter-fill" id="memory-meter-fill" style="width: 0%"></div>
             </div>
             <div class="card-sub-info">
-              <div>ความยาวบริบท: <strong id="memory-chars-text">0 / 2,400 ตัวอักษร</strong></div>
+              <div>ความยาวบริบท: <strong id="memory-chars-text">0 / 3,200 ตัวอักษร</strong></div>
               <div>โฟกัสปัจจุบัน: <strong id="memory-focus-text">ไม่มี</strong></div>
             </div>
           </div>
@@ -182,6 +182,35 @@
               <div class="stat-row">
                 <span>ตอบทันที (0 Token):</span>
                 <strong id="session-deterministic-turns">0 ครั้ง</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="telemetry-card os-card">
+            <div class="card-header">
+              <span class="card-label">สถานะระบบปฏิบัติการ (OS & Kernel)</span>
+              <span class="os-gov-tag tag-healthy" id="os-governor-tag">ปกติ</span>
+            </div>
+            <div class="stats-list">
+              <div class="stat-row">
+                <span>Linux RAM Available:</span>
+                <strong id="os-ram-available">- MB</strong>
+              </div>
+              <div class="stat-row">
+                <span>ZRAM Swap Compression:</span>
+                <strong id="os-zram-stat">ปกติ (0 Disk Writes)</strong>
+              </div>
+              <div class="stat-row">
+                <span>ความร้อนชิป SoC:</span>
+                <strong id="os-soc-temp">- °C</strong>
+              </div>
+              <div class="stat-row">
+                <span>ภาระงาน CPU:</span>
+                <strong id="os-cpu-load">- % (3 AI / 1 OS)</strong>
+              </div>
+              <div class="stat-row">
+                <span>หน่วยความจำโพรเซส (RSS):</span>
+                <strong id="os-process-rss">- MB</strong>
               </div>
             </div>
           </div>

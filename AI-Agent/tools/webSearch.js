@@ -8,10 +8,16 @@ import { searchDuckDuckGo, parseDuckDuckGoHtml, decodeHtmlEntities } from './sea
 export { parseDuckDuckGoHtml, decodeHtmlEntities };
 
 const MAX_SEARCH_RESULTS = 5;
-const MAX_SUMMARY_CHARS = 1500;
+const MAX_SUMMARY_CHARS = 2600;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const MAX_CACHE_ENTRIES = 100;
 const WIKI_FALLBACK_TIMEOUT_MS = 2500;
+
+export const PROVIDER_LABELS = {
+  tavily: 'Tavily AI',
+  duckduckgo: 'DuckDuckGo',
+  wikipedia: 'Wikipedia Fallback'
+};
 
 const searchCache = new Map();
 
@@ -89,6 +95,7 @@ export const webSearchTool = {
     let results = [];
     let provider = null;
     let notice = null;
+    let directAnswer = null;
 
     // 1. Primary Provider: Tavily AI Search (if configured with API key)
     const tavilyConfigured = isTavilyConfigured();
@@ -97,6 +104,9 @@ export const webSearchTool = {
       if (tavilyOutcome.success && tavilyOutcome.results.length > 0) {
         results = tavilyOutcome.results;
         provider = 'tavily';
+        if (tavilyOutcome.answer) {
+          directAnswer = tavilyOutcome.answer;
+        }
       }
     } else {
       // User has not configured Tavily API Key -> inform user via notice that DuckDuckGo is used
@@ -129,12 +139,16 @@ export const webSearchTool = {
         found: false,
         message: `ไม่พบข้อมูลบนเว็บสำหรับ "${cleanQuery}"`,
         provider: null,
+        providerLabel: null,
         notice
       };
     }
 
     // Compose concise summary from top snippets
     const snippetLines = results.map((r, i) => `[แหล่งที่ ${i + 1}: ${r.title}] ${r.snippet}`);
+    if (directAnswer) {
+      snippetLines.unshift(`[คำตอบสังเคราะห์จาก Tavily AI]: ${directAnswer}`);
+    }
     let summary = snippetLines.join('\n');
     if (summary.length > MAX_SUMMARY_CHARS) {
       const slice = summary.slice(0, MAX_SUMMARY_CHARS);
@@ -148,6 +162,8 @@ export const webSearchTool = {
       results,
       summary,
       provider,
+      providerLabel: PROVIDER_LABELS[provider] || provider || 'Web Search',
+      directAnswer,
       notice
     };
 

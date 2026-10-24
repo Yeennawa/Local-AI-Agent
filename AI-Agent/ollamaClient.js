@@ -1,11 +1,11 @@
 import ollama from 'ollama';
 
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
-const DEFAULT_TIMEOUT_MS = 45000;
+const DEFAULT_TIMEOUT_MS = 60000;
 const DEFAULT_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '2m';
 
-// Pi 5 has 4 cores. Leave one for node and the OS, and keep the KV cache small.
-const NUM_CTX = Number(process.env.OLLAMA_NUM_CTX) || 1536;
+// Pi 5 has 4 cores. Leave one for node and the OS, and keep the KV cache sized for 4k context.
+const NUM_CTX = Number(process.env.OLLAMA_NUM_CTX) || 4096;
 const NUM_THREAD = Number(process.env.OLLAMA_NUM_THREAD) || 3;
 
 // Streaming is on purpose: ollama-js can only abort streamed requests,
@@ -19,11 +19,11 @@ export async function queryOllama({
   numCtx = NUM_CTX,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   stallTimeoutMs = undefined,
-  maxTimeoutMs = 180000,
+  maxTimeoutMs = 240000,
   temperature = 0.2,
-  numPredict = 600,
-  repeatPenalty = 1.18,
-  topP = 0.9,
+  numPredict = 768,
+  repeatPenalty = 1.10,
+  topP = 0.85,
   chatFn = defaultChat,
   keepAlive = DEFAULT_KEEP_ALIVE,
   returnDetails = false,
@@ -67,7 +67,8 @@ export async function queryOllama({
         repeat_penalty: repeatPenalty,
         num_ctx: numCtx,
         num_thread: NUM_THREAD,
-        num_predict: numPredict
+        num_predict: numPredict,
+        stop: ['<|im_start|>', '<|im_end|>', '<|endoftext|>']
       },
       keep_alive: keepAlive
     });

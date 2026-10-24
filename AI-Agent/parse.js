@@ -85,7 +85,9 @@ export function sanitizeHistory(history, limit = HISTORY_LIMIT, maxChars = HISTO
     .filter(
       (m) =>
         m &&
-        (m.role === 'user' || m.role === 'assistant') &&
+        (m.role === 'user' ||
+          m.role === 'assistant' ||
+          (m.role === 'system' && typeof m.content === 'string' && m.content.startsWith('[สรุปหัวข้อ'))) &&
         typeof m.content === 'string' &&
         m.content.trim()
     )

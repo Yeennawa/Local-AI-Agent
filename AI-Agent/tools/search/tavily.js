@@ -12,23 +12,34 @@ export function getTavilyApiKey() {
   if (cachedApiKey !== undefined) return cachedApiKey;
 
   if (process.env.TAVILY_API_KEY !== undefined) {
-    const fromEnv = process.env.TAVILY_API_KEY ? process.env.TAVILY_API_KEY.trim() : '';
+    let fromEnv = process.env.TAVILY_API_KEY ? process.env.TAVILY_API_KEY.trim() : '';
+    fromEnv = fromEnv.split(/\s+#/)[0].trim();
+    fromEnv = fromEnv.replace(/^["']|["']$/g, '').trim();
     cachedApiKey = fromEnv || null;
     return cachedApiKey;
   }
 
   try {
     const currentDir = path.dirname(fileURLToPath(import.meta.url));
-    const envPath = path.resolve(currentDir, '../../../.env');
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, 'utf8');
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('TAVILY_API_KEY=')) {
-          const val = trimmed.replace('TAVILY_API_KEY=', '').trim();
-          if (val) {
-            cachedApiKey = val;
-            return cachedApiKey;
+    const candidatePaths = [
+      path.resolve(currentDir, '../../../.env'),
+      path.resolve(process.cwd(), '.env'),
+      path.resolve(process.cwd(), '../.env')
+    ];
+
+    for (const envPath of candidatePaths) {
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf8');
+        for (const line of content.split('\n')) {
+          const trimmed = line.trim();
+          if (trimmed.startsWith('TAVILY_API_KEY=')) {
+            let val = trimmed.replace(/^TAVILY_API_KEY=/, '').trim();
+            val = val.split(/\s+#/)[0].trim();
+            val = val.replace(/^["']|["']$/g, '').trim();
+            if (val) {
+              cachedApiKey = val;
+              return cachedApiKey;
+            }
           }
         }
       }
@@ -37,8 +48,7 @@ export function getTavilyApiKey() {
     // Non-fatal if .env cannot be read
   }
 
-  cachedApiKey = null;
-  return cachedApiKey;
+  return null;
 }
 
 export function isTavilyConfigured() {
@@ -65,6 +75,7 @@ export async function searchTavily({ query, signal, maxResults = 3, timeoutMs = 
         api_key: apiKey,
         query,
         search_depth: 'basic',
+        include_answer: true,
         max_results: maxResults
       }),
       signal: abortSignal
@@ -76,7 +87,7 @@ export async function searchTavily({ query, signal, maxResults = 3, timeoutMs = 
 
     const data = await res.json();
     if (!Array.isArray(data?.results)) {
-      return { success: true, results: [] };
+      return { success: true, answer: data?.answer || null, results: [] };
     }
 
     const results = data.results.map((item) => ({
@@ -85,7 +96,7 @@ export async function searchTavily({ query, signal, maxResults = 3, timeoutMs = 
       url: item.url || ''
     })).filter((item) => item.snippet.length > 0);
 
-    return { success: true, results };
+    return { success: true, answer: data?.answer || null, results };
   } catch (err) {
     return {
       success: false,

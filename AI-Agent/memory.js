@@ -7,7 +7,7 @@
 
 import { computeThaiBigramContainment, normalizeColloquialThai } from './normalizer.js';
 
-const DEFAULT_MAX_TURNS = 10;
+const DEFAULT_MAX_TURNS = 30;
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const DEFAULT_MAX_NOTES = 200;
 
@@ -57,13 +57,16 @@ export class NoteMemoryLedger {
     return note;
   }
 
-  recallNote(query, sessionId = null) {
+  recallNote(query, sessionId = null, { toolMode = 'auto' } = {}) {
     if (!query || typeof query !== 'string') return null;
     const now = Date.now();
     const cleanQuery = normalizeColloquialThai(query).trim();
     const searchKey = cleanQuery.toLowerCase().replace(/[\s.,?!ฯจ้ะครับค่ะนะ]+/g, '');
 
     if (!searchKey) return null;
+
+    const HAS_MODIFIER_REGEX = /(?:นิดเดียว|ทำไม|เพราะอะไร|อย่างไร|ยังไง|ข้อดี|ข้อเสีย|ถ้า|เมื่อไหร่|กี่กรัม|เท่าไหร่|ต่างกัน|อันตรายแค่ไหน)/;
+    const queryHasModifier = HAS_MODIFIER_REGEX.test(query);
 
     const stripQuestionModal = (str) => str
       .replace(/(?:กินได้ไหม|กินได้หรือเปล่า|กินได้ป่าว|กินได้มั้ย|ได้ไหม|ได้มั้ย|ได้หรือเปล่า|ได้ป่าว|ได้ป่ะ|คืออะไร|คือใคร|มีอะไร|อยู่ที่ไหน|ไหม|มั้ย|หรือเปล่า|ป่าว|ครับ|ค่ะ|นะ|จ๊ะ|จ้า)/g, ' ')
@@ -82,6 +85,11 @@ export class NoteMemoryLedger {
         continue;
       }
 
+      // Mode-aware guard: if user is in search mode and note was from Wikipedia, do not recall stale Wiki answer
+      if (toolMode === 'search' && note.sourceTool === 'search_wikipedia') {
+        continue;
+      }
+
       // Check session compatibility: match if same sessionId, or note is global, or sessionId omitted
       if (sessionId && note.sessionId !== 'global' && note.sessionId !== sessionId) {
         continue;
@@ -90,6 +98,13 @@ export class NoteMemoryLedger {
       // Tier 1: Exact canonical key match
       if (note.canonicalKey === searchKey) {
         return note;
+      }
+
+      // If user query has a modifier (e.g. "นิดเดียว", "ทำไม", "ข้อเสีย") but note did not have it,
+      // do not return the old answer via fuzzy match (forces fresh synthesis for sub-questions)
+      const noteHasModifier = HAS_MODIFIER_REGEX.test(note.rawQuery);
+      if (queryHasModifier && !noteHasModifier) {
+        continue;
       }
 
       // Subject contradiction guard: if note has topic and searchKey mentions another major subject
@@ -190,9 +205,11 @@ export class SessionMemory {
       session = {
         totalTurns: 0,
         turns: [],
+        verbatimQuestions: [],
         focusEntity: null,
         firstQuery: null,
         lastActive: Date.now(),
+        lastTurnTelemetry: null,
         usage: {
           promptTokens: 0,
           completionTokens: 0,
@@ -227,20 +244,24 @@ export class SessionMemory {
     return { ...session.usage };
   }
 
-  getUsageSummary(sessionId, { maxContextChars = 2400, maxTokens = 4096 } = {}) {
+  getUsageSummary(sessionId, { maxContextChars = 3200, maxTokens = 4096 } = {}) {
     const session = this.sessions.get(sessionId);
     const sessionTotal = session?.usage
       ? { ...session.usage }
       : { promptTokens: 0, completionTokens: 0, totalTokens: 0, llmCalls: 0, deterministicTurns: 0, totalTurns: 0 };
 
     const turns = session?.turns || [];
-    let contextCharsUsed = 0;
-    for (const t of turns) {
-      contextCharsUsed += (t.userQuery?.length || 0) + (t.assistantText?.length || 0);
+    const assembled = this.getAssembledContext(sessionId, { maxChars: maxContextChars });
+    let contextCharsUsed = assembled.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+    if (contextCharsUsed > maxContextChars) {
+      contextCharsUsed = maxContextChars;
     }
+
+    const usedTokens = session?.lastTurnTelemetry?.usedTokens ?? (contextCharsUsed > 0 ? Math.ceil(contextCharsUsed / 3.5) : 0);
 
     const contextWindowStats = {
       maxTokens,
+      usedTokens,
       historyTurnsUsed: turns.length,
       maxHistoryTurns: this.maxTurns,
       contextCharsUsed,
@@ -258,6 +279,17 @@ export class SessionMemory {
     session.totalTurns += 1;
     if (!session.firstQuery && !isMeta) {
       session.firstQuery = userQuery.trim();
+    }
+
+    if (!isMeta) {
+      session.verbatimQuestions.push({
+        turnNumber: session.totalTurns,
+        query: userQuery.trim(),
+        timestamp: Date.now()
+      });
+      if (session.verbatimQuestions.length > this.maxTurns) {
+        session.verbatimQuestions.shift();
+      }
     }
 
     if (focusEntity && typeof focusEntity === 'string' && focusEntity.trim()) {
@@ -298,40 +330,94 @@ export class SessionMemory {
     if (!sessionId || typeof query !== 'string') return null;
     const session = this.sessions.get(sessionId);
     const text = query.trim();
+    const questions = session?.verbatimQuestions || [];
 
-    // 1. First question recall
+    // 1. Full list of all questions in session
+    const isFullList = /(?:ลิสต์|สรุป|ขอดู|แสดง|มี)?\s*(?:รายการ)?(?:คำถามทั้งหมด|คำถามที่เคยถามทั้งหมด|ทุกคำถามที่ถามไป|ลิสต์คำถามทั้งหมด)/i.test(text);
+    if (isFullList) {
+      if (questions.length === 0) {
+        return 'ยังไม่มีประวัติคำถามก่อนหน้านี้ครับ';
+      }
+      const listStr = questions.map((q, idx) => `${idx + 1}. "${q.query}"`).join('\n');
+      return `รายการคำถามทั้งหมดที่คุณถามไปในเซสชันนี้ (ทั้งหมด ${questions.length} คำถาม):\n${listStr}`;
+    }
+
+    // 2. Specific ordinal question number (e.g., "คำถามที่ 2", "คำถามข้อที่ 5", "ข้อ 3")
+    const ordinalMatch = text.match(/(?:คำถาม|ข้อ)(?:ที่|หมายเลข|ข้อที่)?\s*(\d+)/i);
+    if (ordinalMatch) {
+      const targetNum = parseInt(ordinalMatch[1], 10);
+      if (questions.length === 0) {
+        return 'ยังไม่มีประวัติคำถามก่อนหน้านี้ครับ';
+      }
+      if (targetNum >= 1 && targetNum <= questions.length) {
+        return `คำถามที่ ${targetNum} ที่คุณถามคือ: "${questions[targetNum - 1].query}" ครับ`;
+      }
+      return `ในเซสชันนี้คุณถามไป ${questions.length} คำถาม ยังไม่มีคำถามที่ ${targetNum} ครับ`;
+    }
+
+    // 3. Slices / Ranges: N questions from start (e.g. "3 คำถามแรก", "5 ข้อแรก")
+    const sliceFirstMatch = text.match(/(\d+)\s*(?:คำถาม|ข้อ)(?:แรก|แรกๆ)/i);
+    if (sliceFirstMatch) {
+      const count = parseInt(sliceFirstMatch[1], 10);
+      if (questions.length === 0) {
+        return 'ยังไม่มีประวัติคำถามก่อนหน้านี้ครับ';
+      }
+      const slice = questions.slice(0, count);
+      const listStr = slice.map((q, idx) => `${idx + 1}. "${q.query}"`).join('\n');
+      return `รายการ ${slice.length} คำถามแรกที่คุณถามคือ:\n${listStr}`;
+    }
+
+    // 4. Slices / Ranges: N questions from end (e.g. "3 คำถามล่าสุด")
+    const sliceLastMatch = text.match(/(\d+)\s*(?:คำถาม|ข้อ)(?:ล่าสุด|หลังสุด)/i);
+    if (sliceLastMatch) {
+      const count = parseInt(sliceLastMatch[1], 10);
+      if (questions.length === 0) {
+        return 'ยังไม่มีประวัติคำถามก่อนหน้านี้ครับ';
+      }
+      const slice = questions.slice(-count);
+      const listStr = slice.map((q, idx) => `${idx + 1}. "${q.query}"`).join('\n');
+      return `รายการ ${slice.length} คำถามล่าสุดที่คุณถามคือ:\n${listStr}`;
+    }
+
+    // 5. First question recall
     const isFirstQuestion = /(?:คำถามแรก|คำถามที่\s*1\b|ข้อแรก|ถามอะไร(?:ไป)?(?:เป็น)?(?:ข้อ|คำถาม)?แรก|what was (?:my |the )?first question)/i.test(text);
     if (isFirstQuestion) {
-      if (!session || !session.firstQuery) {
+      if (questions.length === 0 && (!session || !session.firstQuery)) {
         return 'ยังไม่มีประวัติคำถามก่อนหน้านี้ครับ';
       }
-      return `คำถามแรกที่คุณถามคือ: "${session.firstQuery}" ครับ`;
+      const firstQ = questions[0]?.query || session?.firstQuery;
+      return `คำถามแรกที่คุณถามคือ: "${firstQ}" ครับ`;
     }
 
-    // 2. Previous question recall
-    const isPreviousQuestion = /(?:คำถามก่อนหน้านี้|คำถามที่แล้ว|ข้อที่แล้ว|เมื่อกี้ถามอะไร|คำถามล่าสุดคือ|what was (?:my |the )?last question|previous question)/i.test(text);
+    // 6. Second to last question recall ("คำถามรองสุดท้าย", "ข้อรองสุดท้าย")
+    const isPenultimate = /(?:คำถามรองสุดท้าย|ข้อรองสุดท้าย|second to last question)/i.test(text);
+    if (isPenultimate) {
+      if (questions.length < 2) {
+        return 'ยังไม่มีคำถามรองสุดท้ายในเซสชันนี้ครับ';
+      }
+      return `คำถามรองสุดท้ายที่คุณถามคือ: "${questions[questions.length - 2].query}" ครับ`;
+    }
+
+    // 7. Previous question recall
+    const isPreviousQuestion = /(?:คำถามก่อนหน้านี้|คำถามที่แล้ว|ข้อที่แล้ว|เมื่อกี้ถามอะไร|คำถามล่าสุดคือ|คำถามล่าสุด|what was (?:my |the )?last question|previous question)/i.test(text);
     if (isPreviousQuestion) {
-      if (!session || session.turns.length === 0) {
+      if (questions.length === 0) {
         return 'ยังไม่มีประวัติคำถามก่อนหน้านี้ครับ';
       }
-      const substantiveTurns = session.turns.filter((t) => !t.isMeta);
-      const lastTurn = substantiveTurns.length > 0
-        ? substantiveTurns[substantiveTurns.length - 1]
-        : session.turns[session.turns.length - 1];
-      return `คำถามล่าสุดก่อนหน้านี้คือ: "${lastTurn.userQuery}" ครับ`;
+      return `คำถามล่าสุดก่อนหน้านี้คือ: "${questions[questions.length - 1].query}" ครับ`;
     }
 
-    // 3. Question count
+    // 8. Question count
     const isQuestionCount = /(?:ถามไปกี่ข้อ|ถามไปกี่คำถาม|กี่คำถามแล้ว|คุยกี่รอบ|how many questions)/i.test(text);
     if (isQuestionCount) {
-      const substantiveCount = session ? session.turns.filter((t) => !t.isMeta).length : 0;
+      const substantiveCount = questions.length || (session ? session.turns.filter((t) => !t.isMeta).length : 0);
       return `คุณถามไปทั้งหมด ${substantiveCount} คำถามแล้วครับ`;
     }
 
     return null;
   }
 
-  getAssembledContext(sessionId, { maxChars = 2400, maxDialogueTurns = 4 } = {}) {
+  getAssembledContext(sessionId, { maxChars = 3200, maxDialogueTurns = 4 } = {}) {
     const session = this.sessions.get(sessionId);
     if (!session || session.turns.length === 0) return [];
 
@@ -359,12 +445,14 @@ export class SessionMemory {
       }
     }
 
-    // Enforce maxChars constraint
+    // Enforce maxChars constraint with strict hard clamp
     let totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
     while (totalChars > maxChars && messages.length > 1) {
-      // Drop from the front (oldest context first)
       const removed = messages.shift();
       totalChars -= removed.content.length;
+    }
+    if (messages.length === 1 && messages[0].content.length > maxChars) {
+      messages[0].content = messages[0].content.slice(0, maxChars);
     }
 
     return messages;

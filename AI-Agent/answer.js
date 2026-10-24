@@ -68,9 +68,10 @@ export function composeStructuredAnswer(toolName, result) {
 
     case 'get_system_info': {
       const cpu = result.cpuPercent ?? result.cpuUsage ?? 0;
-      const ram = result.ramPercent ?? result.memoryUsage ?? 0;
-      const temp = result.tempC !== undefined ? `, อุณหภูมิ ${result.tempC}°C` : '';
-      return `สถานะระบบ: CPU ใช้งาน ${cpu}%, แรมใช้งาน ${ram}%${temp} ครับ`;
+      const ram = result.ramPercent ?? result.memoryUsagePercent ?? result.memoryUsage ?? 0;
+      const used = result.usedMemoryMB ? ` (${result.usedMemoryMB} / ${result.totalMemoryMB} MB)` : '';
+      const temp = result.tempC !== null && result.tempC !== undefined ? `, อุณหภูมิ ${result.tempC}°C` : '';
+      return `สถานะระบบ: CPU ใช้งาน ${cpu}%, แรมใช้งาน ${ram}%${used}${temp} ครับ`;
     }
 
     case 'calculate': {
@@ -128,7 +129,8 @@ export function formatCleanContext(toolName, result) {
       .replace(/\d{1,2}\s+(?:ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)\s+\d{4}/g, '')
       .replace(/(?:Bright TV|ไทยรัฐ|เดลินิวส์|มติชน|sanook|kapook)\s*(?:News|ออนไลน์)?/gi, '')
       .replace(/\.{3,}/g, '')
-      .replace(/\s{2,}/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
     return `ข้อมูลที่พบ:\n${cleanSummary}`;
   }
@@ -140,7 +142,7 @@ export function formatCleanContext(toolName, result) {
  * Sanitizes and polishes model generated answers.
  * Removes echoed queries, leaked source markers, and enforces polarity safety.
  */
-export function polishAnswerText(text, userMessage = '', referenceText = '') {
+export function polishAnswerText(text, userMessage = '', referenceText = '', { doneReason = 'stop' } = {}) {
   if (typeof text !== 'string') return '';
   let cleaned = text.trim();
 
@@ -187,10 +189,13 @@ export function polishAnswerText(text, userMessage = '', referenceText = '') {
   cleaned = processedParagraphs.join('\n\n').trim();
 
   // 5. Trim dangling incomplete sentence if clipped mid-word/mid-sentence after punctuation
-  const THAI_SENTENCE_ENDINGS = /(?:ครับ|ค่ะ|จ้า|นะ|ครับผม|นะคะ|เลยครับ|เช่นกันครับ|นั่นเอง|เป็นต้น|อย่างยิ่ง|โดยสิ้นเชิง|[.!?।ฯ\n])$/;
+  const THAI_SENTENCE_ENDINGS = /(?:ครับ|ค่ะ|จ้า|นะ|ครับผม|นะคะ|เลยครับ|เช่นกันครับ|นั่นเอง|เป็นต้น|อย่างยิ่ง|โดยสิ้นเชิง|[.!?।ฯ\n]|[a-zA-Z0-9)\]])$/;
   const THAI_ABBR_REGEX = /(?:พ\.ศ\.|ค\.ศ\.|ดร\.|พ\.ร\.บ\.|จ\.|อ\.|ต\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.|ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.)$/;
+  const INCOMPLETE_TAIL_REGEX = /(?:[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]|เรื่|ด้า|อย่|ซึ่|เพื่|แล้|เป็|มี|และ|หรือ|ว่า|ที่|แต่|คือ|เช่น|กับ|โดย|ใน)$/;
 
-  if (cleaned.length > 50 && !THAI_SENTENCE_ENDINGS.test(cleaned)) {
+  const isDangling = doneReason === 'length' || INCOMPLETE_TAIL_REGEX.test(cleaned) || (cleaned.length > 50 && !THAI_SENTENCE_ENDINGS.test(cleaned));
+
+  if (isDangling) {
     const lastPunct = Math.max(
       cleaned.lastIndexOf('. '),
       cleaned.lastIndexOf('.\n'),

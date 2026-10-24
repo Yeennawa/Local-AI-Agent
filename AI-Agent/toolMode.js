@@ -83,30 +83,33 @@ export function applyToolModePolicy(route, { toolMode = 'auto', message = '' } =
     return route;
   }
 
-  // 5. Search Mode: boost knowledge & queries to live web search
+  // 5. Search Mode: boost knowledge & substantive queries to live web search
   if (mode === 'search') {
-    // If router picked Wikipedia, redirect to deep live web search (Tavily/DDG)
-    if (route.intent === 'tool' && route.toolCall?.name === 'search_wikipedia') {
-      const topicOrQuery = route.toolCall.params?.topic || route.toolCall.params?.query || message;
+    // If router picked Wikipedia or News, redirect to deep live web search (Tavily AI Primary)
+    if (route.intent === 'tool' && (route.toolCall?.name === 'search_wikipedia' || route.toolCall?.name === 'get_news')) {
+      const fullQuery = (typeof message === 'string' && message.trim())
+        ? message.trim()
+        : (route.toolCall.params?.topic || route.toolCall.params?.query || '');
       return {
         intent: 'tool',
         toolCall: {
           name: 'search_web',
-          params: { query: topicOrQuery }
+          params: { query: fullQuery }
         },
         confidence: 'high',
         reason: 'tool_mode_search_override'
       };
     }
 
-    // If router fell through to default_chat, but message contains a question, route to search_web
-    if (route.intent === 'finish' && route.reason === 'default_chat') {
-      if (typeof message === 'string' && QUESTION_MARKER_REGEX.test(message)) {
+    // In search mode, any substantive prompt falling through default_chat or general knowledge is promoted to search_web
+    if (route.intent === 'finish' && (route.reason === 'default_chat' || route.reason === 'practical_qa' || route.reason === 'edibility_qa')) {
+      const queryStr = (typeof message === 'string') ? message.trim() : '';
+      if (queryStr.length >= 2) {
         return {
           intent: 'tool',
           toolCall: {
             name: 'search_web',
-            params: { query: message.trim() }
+            params: { query: queryStr }
           },
           confidence: 'high',
           reason: 'tool_mode_search_prompt'

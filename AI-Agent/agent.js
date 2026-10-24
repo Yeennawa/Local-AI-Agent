@@ -15,6 +15,8 @@ import {
 } from './answer.js';
 import { getSafetyKnowledgeHint } from './safety.js';
 import { applyToolModePolicy, normalizeToolMode } from './toolMode.js';
+import { detectDominantLanguage } from './languageGuard.js';
+import { selfReflectAndRefine } from './reflection.js';
 import {
   estimateTokens,
   estimateMessagesTokens,
@@ -125,9 +127,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       contextWindowStats = {
         maxTokens: DEFAULT_MAX_CONTEXT_TOKENS,
         historyTurnsUsed: 0,
-        maxHistoryTurns: 10,
+        maxHistoryTurns: 30,
         contextCharsUsed: 0,
-        maxContextChars: 2400,
+        maxContextChars: 3200,
         focusEntity: null
       };
     }
@@ -175,7 +177,9 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   // 2. Note Memory Ledger Recall (Instant recall of previously verified questions)
   // Skip recall for queries checking active model identity to avoid stale cached identity across mode switches
   const isIdentityCheck = /(?:โมเดล|model|qwen|1\.5b|3b|lite|advanced)/i.test(message);
-  const cachedNote = !isIdentityCheck ? sessionMemory.noteLedger.recallNote(message, effectiveSessionId) : null;
+  const cachedNote = !isIdentityCheck
+    ? sessionMemory.noteLedger.recallNote(message, effectiveSessionId, { toolMode })
+    : null;
   if (cachedNote && cachedNote.answer) {
     if (effectiveSessionId) {
       sessionMemory.recordTurn(effectiveSessionId, {
@@ -209,7 +213,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   const rawHistory = effectiveSessionId
     ? sessionMemory.getAssembledContext(effectiveSessionId)
     : (Array.isArray(conversationHistory) && conversationHistory.length > 0 ? conversationHistory : []);
-  const history = sanitizeHistory(rawHistory, 10, 1200);
+  const history = sanitizeHistory(rawHistory, 30, 3200);
 
   const prevTurns = effectiveSessionId ? sessionMemory.getHistory(effectiveSessionId) : [];
   const lastTurn = prevTurns.filter((t) => !t.isMeta).at(-1);
@@ -279,11 +283,11 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         personaPrompt = route.prompt;
       }
       if (route.intent === 'tool' && route.toolCall) {
-        const name = route.toolCall.name;
-        if (toolRegistry.hasTool(name)) {
-          const toolLabel = getToolLabel(name);
-          onStatus?.({ status: 'using_tool', tool: name, params: route.toolCall.params, label: toolLabel });
-          const execResult = await toolRegistry.executeTool(name, route.toolCall.params);
+        let activeToolName = route.toolCall.name;
+        if (toolRegistry.hasTool(activeToolName)) {
+          const toolLabel = getToolLabel(activeToolName);
+          onStatus?.({ status: 'using_tool', tool: activeToolName, params: route.toolCall.params, label: toolLabel });
+          let execResult = await toolRegistry.executeTool(activeToolName, route.toolCall.params);
           toolsUsed.push(execResult);
 
           if (execResult.success && execResult.result?.notice) {
@@ -295,11 +299,26 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
           }
 
           if (execResult.success && execResult.result?.found === false && execResult.result.message) {
-            return replyWithoutModel(execResult.result.message);
+            // Wikipedia Auto-Cascade to Tavily Web Search if not found
+            if (activeToolName === 'search_wikipedia' && toolRegistry.hasTool('search_web')) {
+              onStatus?.({ status: 'tool_cascade', from: 'search_wikipedia', to: 'search_web' });
+              const cascadeResult = await toolRegistry.executeTool('search_web', { query: message });
+              if (cascadeResult.success && cascadeResult.result?.found) {
+                execResult = cascadeResult;
+                activeToolName = 'search_web';
+                toolsUsed.push(execResult);
+                cleanContext = formatCleanContext(activeToolName, execResult.result);
+                referenceText = execResult.result?.summary || '';
+              } else {
+                return replyWithoutModel(execResult.result.message);
+              }
+            } else {
+              return replyWithoutModel(execResult.result.message);
+            }
           }
 
           // Structured tools answer deterministically without LLM (0 tokens)
-          const structuredText = composeStructuredAnswer(name, execResult.result);
+          const structuredText = composeStructuredAnswer(activeToolName, execResult.result);
           if (structuredText) {
             return replyWithoutModel(structuredText, {
               feeling: 'happy',
@@ -308,7 +327,7 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
           }
 
           // Unstructured tools (search_wikipedia, search_web) prepare clean extractive context
-          cleanContext = formatCleanContext(name, execResult.result);
+          cleanContext = formatCleanContext(activeToolName, execResult.result);
           referenceText = execResult.result?.summary || '';
         }
       }
@@ -338,9 +357,22 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       ? parsed.text.trim()
       : extractIncompleteText(raw).trim();
 
-    const polished = polishAnswerText(candidateText, effectiveMessage, referenceText);
+    const dominantLang = detectDominantLanguage(effectiveMessage).language;
+    const polished = polishAnswerText(candidateText, effectiveMessage, referenceText, { doneReason: synthesized?.doneReason || 'stop' });
     const grounded = verifyAndGroundAnswer(polished, effectiveMessage, referenceText);
-    const finalText = grounded ? clip(grounded, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
+    const initialText = grounded ? clip(grounded, MAX_PLAIN_REPLY_CHARS) : 'รับทราบครับ ดำเนินการเรียบร้อยแล้ว';
+
+    // Two-Pass Self-Reflection & Verification Engine (reflection.js)
+    const reflectionResult = await selfReflectAndRefine({
+      draft: initialText,
+      userQuery: effectiveMessage,
+      referenceText,
+      dominantLanguage: dominantLang,
+      chatFn,
+      model,
+      forceRefinement: Boolean(options?.selfReflect === 'always')
+    });
+    const finalText = reflectionResult.finalText;
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
 
     const topicEntity = toolsUsed[0]?.params?.topic ||
@@ -374,12 +406,16 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
 
     const activeNotice = toolsUsed.find((t) => t.result?.notice)?.result?.notice || null;
     const durationMs = Date.now() - startTime;
-    const promptTokens = (typeof meta?.prompt_eval_count === 'number' && meta.prompt_eval_count > 0)
-      ? meta.prompt_eval_count
-      : (synthesized?.estimatedPromptTokens || estimateTokens(effectiveMessage));
-    const completionTokens = (typeof meta?.eval_count === 'number' && meta.eval_count > 0)
-      ? meta.eval_count
-      : estimateTokens(finalText);
+    const promptTokens = (typeof meta?.promptEvalCount === 'number' && meta.promptEvalCount > 0)
+      ? meta.promptEvalCount
+      : ((typeof meta?.prompt_eval_count === 'number' && meta.prompt_eval_count > 0)
+        ? meta.prompt_eval_count
+        : (synthesized?.estimatedPromptTokens || estimateTokens(effectiveMessage)));
+    const completionTokens = (typeof meta?.evalCount === 'number' && meta.evalCount > 0)
+      ? meta.evalCount
+      : ((typeof meta?.eval_count === 'number' && meta.eval_count > 0)
+        ? meta.eval_count
+        : estimateTokens(finalText));
     const usage = createUsage({
       promptTokens,
       completionTokens,

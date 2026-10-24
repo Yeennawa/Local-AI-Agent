@@ -360,15 +360,18 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     };
   }
 
-  // 16. Explicit Web Search Intent (Adaptive RAG)
-  const isExplicitWebSearch = /(?:ค้นเว็บ|เสิร์ชเว็บ|หาในเน็ต|ค้นหาในเว็บ|search\s*web)/i.test(raw);
-  if (isExplicitWebSearch) {
-    const query = norm.searchCandidates[0] || raw;
+  // 16. Explicit Web Search Intent & Modern Live Information (Tavily AI Primary)
+  const isExplicitWebSearch = /(?:ค้นเว็บ|เสิร์ชเว็บ|หาในเน็ต|ค้นหาในเว็บ|เสิร์ชกูเกิล|เสิร์ชดูหน่อย|เสิร์ชหา|ค้นหาเว็บ|search\s*web)/i.test(raw);
+  const isModernLiveQuery = /(?:202[4-9]|256[7-9]|อัปเดตล่าสุด|รุ่นล่าสุด|เวอร์ชันล่าสุด|ใหม่ล่าสุด|เทรนด์ล่าสุด|รีวิว|โปรโมชั่น|ซื้อที่ไหน|ราคา.*เท่าไหร่|ราคา.*กี่บาท)/i.test(raw) &&
+    !/(?:คืออะไร|คือใคร|ประวัติ|หมายถึงอะไร)/i.test(raw);
+
+  if (isExplicitWebSearch || isModernLiveQuery) {
+    const query = (isExplicitWebSearch && norm.searchCandidates[0]) ? norm.searchCandidates[0] : raw.trim();
     return {
       intent: 'tool',
       toolCall: { name: 'search_web', params: { query } },
       confidence: 'high',
-      reason: 'explicit_web_search'
+      reason: isExplicitWebSearch ? 'explicit_web_search' : 'modern_live_search'
     };
   }
 

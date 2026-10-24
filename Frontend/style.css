@@ -866,6 +866,32 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.os-card {
+  border-left: 3px solid var(--primary-color);
+}
+
+.os-gov-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.os-gov-tag.tag-healthy {
+  background-color: rgba(46, 125, 50, 0.12);
+  color: #2e7d32;
+}
+
+.os-gov-tag.tag-warning {
+  background-color: rgba(230, 81, 0, 0.12);
+  color: #e65100;
+}
+
+.os-gov-tag.tag-critical {
+  background-color: rgba(198, 40, 40, 0.12);
+  color: #c62828;
+}
+
 /* Responsive side drawer for mobile & tablet */
 @media (max-width: 960px) {
   .telemetry-drawer {

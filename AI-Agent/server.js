@@ -8,6 +8,8 @@ import { RequestQueue, requestQueue } from './queue.js';
 import { ModelManager, modelManager } from './modelManager.js';
 import { TOOL_MODES, normalizeToolMode } from './toolMode.js';
 import { isTavilyConfigured } from './tools/search/tavily.js';
+import { getOSSnapshot } from './osMonitor.js';
+import { buildUsagePayload } from './telemetry.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -246,12 +248,21 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
     });
   });
 
+  app.get('/api/os/metrics', async (_req, res) => {
+    const snapshot = await getOSSnapshot();
+    return res.json(snapshot);
+  });
+
   app.get('/api/chat/session/:sessionId', (req, res) => {
     const { sessionId } = req.params;
     const history = sessionMemory.getHistory(sessionId);
     const focusEntity = sessionMemory.getFocusEntity(sessionId);
     const usage = sessionMemory.getUsageSummary(sessionId);
-    return res.json({ sessionId, history, focusEntity, usage });
+    const telemetry = buildUsagePayload({
+      sessionStats: usage.sessionTotal,
+      contextWindowStats: usage.contextWindowStats
+    });
+    return res.json({ sessionId, history, focusEntity, usage, telemetry });
   });
 
   app.use((err, _req, res, next) => {

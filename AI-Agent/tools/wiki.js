@@ -3,7 +3,7 @@
 
 import { computeThaiBigramContainment, normalizeQuery, expandAbbreviations } from '../normalizer.js';
 
-const MAX_EXTRACT_CHARS = 450;
+const MAX_EXTRACT_CHARS = 1400;
 const FETCH_TIMEOUT_MS = 6500;
 const USER_AGENT = 'LocalAIAgent/1.0 (https://github.com/Yeennawa/Local-AI-Agent; student-project@local.ai)';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -115,12 +115,12 @@ export function buildFocusedExtract(rawText, focusKeywords = [], maxChars = MAX_
       start = prevSpace + 1;
     }
 
-    // Take a passage from start up to ~280 characters
-    const passageSlice = cleaned.slice(start, start + 280);
-    const passage = clipAtSentenceBoundary(passageSlice, 270);
+    // Take a passage from start up to ~600 characters
+    const passageSlice = cleaned.slice(start, start + 600);
+    const passage = clipAtSentenceBoundary(passageSlice, 580);
 
-    // Lead prefix (first sentence or up to 140 chars)
-    let leadPrefix = clipAtSentenceBoundary(cleaned, 140);
+    // Lead prefix (first sentence or up to 250 chars)
+    let leadPrefix = clipAtSentenceBoundary(cleaned, 250);
     if (!leadPrefix.endsWith('...')) leadPrefix += '...';
 
     const combined = `${leadPrefix}\n${passage}`;

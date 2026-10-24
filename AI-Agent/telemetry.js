@@ -98,9 +98,9 @@ export function buildUsagePayload({
       maxTokens,
       usagePercent,
       historyTurnsUsed: contextWindowStats.historyTurnsUsed ?? 0,
-      maxHistoryTurns: contextWindowStats.maxHistoryTurns ?? 10,
+      maxHistoryTurns: contextWindowStats.maxHistoryTurns ?? 30,
       contextCharsUsed: contextWindowStats.contextCharsUsed ?? 0,
-      maxContextChars: contextWindowStats.maxContextChars ?? 2400,
+      maxContextChars: contextWindowStats.maxContextChars ?? 3200,
       focusEntity: contextWindowStats.focusEntity || null
     },
     lastTurn: {

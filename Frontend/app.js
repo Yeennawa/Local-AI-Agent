@@ -96,8 +96,60 @@ function formatNumber(num) {
   return num.toLocaleString("th-TH");
 }
 
+const osRamAvailable = document.getElementById("os-ram-available");
+const osZramStat = document.getElementById("os-zram-stat");
+const osSocTemp = document.getElementById("os-soc-temp");
+const osCpuLoad = document.getElementById("os-cpu-load");
+const osProcessRss = document.getElementById("os-process-rss");
+const osGovernorTag = document.getElementById("os-governor-tag");
+
+async function fetchOSMetrics() {
+  try {
+    const res = await fetch("/api/os/metrics");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (osRamAvailable && data.memAvailableMB !== undefined) {
+      osRamAvailable.textContent = `${formatNumber(data.memAvailableMB)} MB / ${formatNumber(data.totalMemoryMB)} MB`;
+    }
+    if (osZramStat) {
+      if (data.zram && data.zram.zramActive) {
+        osZramStat.textContent = `${data.zram.comprDataMB} MB (${data.zram.compressionRatio}x)`;
+      } else {
+        osZramStat.textContent = "ปกติ (0 Disk Writes)";
+      }
+    }
+    if (osSocTemp) {
+      osSocTemp.textContent = data.tempC !== null && data.tempC !== undefined ? `${data.tempC} °C` : "ปกติ";
+    }
+    if (osCpuLoad) {
+      osCpuLoad.textContent = `${data.cpuPercent}% (3 AI / 1 OS)`;
+    }
+    if (osProcessRss) {
+      osProcessRss.textContent = `${data.processRssMB} MB`;
+    }
+    if (osGovernorTag && data.governorState) {
+      const level = data.governorState.level;
+      osGovernorTag.className = "os-gov-tag";
+      if (level === "critical") {
+        osGovernorTag.classList.add("tag-critical");
+        osGovernorTag.textContent = "วิกฤต (OOM)";
+      } else if (level === "warning") {
+        osGovernorTag.classList.add("tag-warning");
+        osGovernorTag.textContent = "เฝ้าระวัง";
+      } else {
+        osGovernorTag.classList.add("tag-healthy");
+        osGovernorTag.textContent = "ปกติ";
+      }
+    }
+  } catch {}
+}
+
 function updateTelemetryUI(usage) {
   if (!usage) return;
+
+  try {
+    localStorage.setItem("ai_agent_telemetry_snapshot", JSON.stringify(usage));
+  } catch {}
 
   const modelLabel = usage.modelLabel || (currentModelMode === "advanced" ? "Qwen2.5 3B" : "Qwen2.5 1.5B");
   if (drawerModelPill) {
@@ -141,9 +193,9 @@ function updateTelemetryUI(usage) {
     }
   }
 
-  // 2. Sliding Memory Capacity
+  // 2. Sliding Memory Capacity (30 turns)
   const historyTurnsUsed = cw.historyTurnsUsed || 0;
-  const maxHistoryTurns = cw.maxHistoryTurns || 10;
+  const maxHistoryTurns = cw.maxHistoryTurns || 30;
   if (memoryTurnsText) {
     memoryTurnsText.textContent = `${historyTurnsUsed} / ${maxHistoryTurns} รอบ`;
   }
@@ -153,7 +205,7 @@ function updateTelemetryUI(usage) {
   }
   if (memoryCharsText) {
     const charsUsed = cw.contextCharsUsed || 0;
-    const maxChars = cw.maxContextChars || 2400;
+    const maxChars = cw.maxContextChars || 3200;
     memoryCharsText.textContent = `${formatNumber(charsUsed)} / ${formatNumber(maxChars)} ตัวอักษร`;
   }
   if (memoryFocusText) {
@@ -196,9 +248,15 @@ function updateTelemetryUI(usage) {
   if (sessionDeterministicTurns) {
     sessionDeterministicTurns.textContent = `${formatNumber(st.deterministicTurns || 0)} ครั้ง`;
   }
+
+  fetchOSMetrics();
 }
 
 function resetTelemetryUI() {
+  try {
+    localStorage.removeItem("ai_agent_telemetry_snapshot");
+  } catch {}
+
   if (contextPercentText) contextPercentText.textContent = "0.0%";
   if (contextTokensText) contextTokensText.textContent = "0 / 4,096 tokens";
   if (contextMeterFill) {
@@ -209,9 +267,9 @@ function resetTelemetryUI() {
     contextStatusTag.className = "meter-status-tag tag-healthy";
     contextStatusTag.textContent = "ปกติ";
   }
-  if (memoryTurnsText) memoryTurnsText.textContent = "0 / 10 รอบ";
+  if (memoryTurnsText) memoryTurnsText.textContent = "0 / 30 รอบ";
   if (memoryMeterFill) memoryMeterFill.style.width = "0%";
-  if (memoryCharsText) memoryCharsText.textContent = "0 / 2,400 ตัวอักษร";
+  if (memoryCharsText) memoryCharsText.textContent = "0 / 3,200 ตัวอักษร";
   if (memoryFocusText) memoryFocusText.textContent = "ไม่มี";
   if (turnTypeBadge) {
     turnTypeBadge.className = "turn-type-badge";
@@ -224,6 +282,8 @@ function resetTelemetryUI() {
   if (sessionTotalTokens) sessionTotalTokens.textContent = "0";
   if (sessionLlmCalls) sessionLlmCalls.textContent = "0 ครั้ง";
   if (sessionDeterministicTurns) sessionDeterministicTurns.textContent = "0 ครั้ง";
+
+  fetchOSMetrics();
 }
 
 let currentModelMode = "lite";
@@ -408,6 +468,41 @@ if (currentToolMode === "search") {
   checkTavilyStatusOnSearch();
 }
 
+async function hydrateSessionTelemetry() {
+  try {
+    const raw = localStorage.getItem("ai_agent_telemetry_snapshot");
+    if (raw) {
+      const snap = JSON.parse(raw);
+      if (snap) updateTelemetryUI(snap);
+    }
+  } catch {}
+
+  fetchOSMetrics();
+
+  if (currentSessionId) {
+    try {
+      const res = await fetch(`/api/chat/session/${currentSessionId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.telemetry) {
+          updateTelemetryUI(data.telemetry);
+        }
+      }
+    } catch {}
+  }
+}
+
+hydrateSessionTelemetry();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", hydrateSessionTelemetry);
+}
+window.addEventListener("pageshow", hydrateSessionTelemetry);
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") {
+    fetchOSMetrics();
+  }
+});
+
 async function handleSubmit(event) {
   event.preventDefault();
   const prompt = promptInput.value.trim();
@@ -508,7 +603,10 @@ async function handleSubmit(event) {
         .filter(function (t) { return t.tool; })
         .map(function (t) {
           if (t.result?.fromNote) return "คลังความจำ (0ms)";
-          const name = t.label || t.tool;
+          let name = t.label || t.tool;
+          if (t.result?.providerLabel) {
+            name = `${name} (${t.result.providerLabel})`;
+          }
           const time = t.durationMs !== undefined ? ` (${(t.durationMs / 1000).toFixed(1)}s)` : '';
           return `${name}${time}`;
         });

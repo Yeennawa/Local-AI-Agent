@@ -3,7 +3,7 @@
 // Prevents concurrent model invocations that lead to Linux OOM-killer crashes during group demos.
 
 export class RequestQueue {
-  constructor({ maxConcurrent = 1, maxQueueLength = 10, timeoutMs = 60000 } = {}) {
+  constructor({ maxConcurrent = 1, maxQueueLength = 10, timeoutMs = 120000 } = {}) {
     this.maxConcurrent = maxConcurrent;
     this.maxQueueLength = maxQueueLength;
     this.timeoutMs = timeoutMs;

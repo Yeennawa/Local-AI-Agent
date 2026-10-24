@@ -1,6 +1,6 @@
 # Local AI Agent (Raspberry Pi 5 Edge AI Assistant)
 
-ระบบผู้ช่วย AI อัจฉริยะประมวลผลในเครื่อง (Edge AI Assistant) แบบกระจายศูนย์ (Distributed Architecture) สำหรับบอร์ด **Raspberry Pi 5 (RAM 4GB)** และคอมพิวเตอร์ทั่วไป ขับเคลื่อนด้วยสถาปัตยกรรม **Adaptive RAG**, ระบบสลับโมเดลแบบไดนามิก (**Dynamic Model Switching**), โหมดควบคุมการทำงานของเครื่องมือ (**Tool Modes**), การสืบค้นเว็บแบบสองชั้น (**Dual Search Providers**), และแผงรายงานสถิติการใช้งาน Token แบบ Real-time (**Token & Context Limit Telemetry**)
+ระบบผู้ช่วย AI อัจฉริยะประมวลผลในเครื่อง (Edge AI Assistant) แบบกระจายศูนย์ (Distributed Architecture) สำหรับบอร์ด **Raspberry Pi 5 (RAM 4GB)** และคอมพิวเตอร์ทั่วไป ขับเคลื่อนด้วยสถาปัตยกรรม **Adaptive RAG**, ระบบสลับโมเดลแบบไดนามิก (**Dynamic Model Switching**), โหมดควบคุมการทำงานของเครื่องมือ (**Tool Modes**), การสืบค้นเว็บแบบสองชั้น (**Dual Search Providers: Tavily AI & DuckDuckGo**), ระบบเฝ้าระวังเคอร์เนลและควบคุมแรงกดดันฮาร์ดแวร์ (**Linux Kernel Telemetry & Active OS Governor**), ระบบความจำอัตชีวประวัติ 30 รอบ (**30-Turn Verbatim Episodic Memory**), ระบบกลั่นกรองคำตอบสองชั้น (**Two-Pass Self-Reflection**), และระบบรักษาความบริสุทธิ์ของภาษา (**Universal Multilingual Guard**)
 
 โปรเจกต์นี้ต่อยอดแนวคิดจาก [Max Headbox](https://github.com/syxanash/maxheadbox) โดยปรับปรุงสถาปัตยกรรมใหม่ทั้งหมดให้ทำงานเป็น **Deep Module** บนสภาพแวดล้อมฮาร์ดแวร์ทรัพยากรจำกัด ปราศจากการเรียกใช้งาน Cloud API ภายนอก (ยกเว้นบริการค้นหาเว็บทางเลือก) และปกป้อง Flash Memory ของ MicroSD Card ด้วยการไม่เขียนไฟล์ชั่วคราวลงดิสก์ (**Zero Disk Writes**)
 
@@ -12,9 +12,13 @@
 | :--- | :--- | :--- |
 | **Dynamic Model Switching** | สลับโหมด AI ได้ทันทีระหว่าง Lite (1.5B) และ Advanced (3B) | **Sequential Unload**: ปลดโมเดลเดิมออกจาก RAM (`keep_alive: 0`) และตรวจสอบสถานะหน่วยความจำผ่าน `client.ps()` จน RAM คืนกลับมาก่อนจึงโหลดโมเดลใหม่ ป้องกัน Linux OOM Crash |
 | **Tool Modes (โหมดเครื่องมือ)** | เลือกรูปแบบการทำงานได้ 3 โหมดตามลักษณะงาน: ออโต้, คุยล้วน, ค้นเว็บ | **Tool Mode Policy Engine**: ควบคุมการเปิด/ปิดเครื่องมือภายนอกในระดับฟังก์ชัน จำค่าผ่าน `localStorage` เหมือน Gemini |
-| **Dual Web Search Providers** | ค้นหาข้อมูลเว็บเปิดสดใหม่โดยไม่ต้องพึ่งพา API Key เป็นภาคบังคับ | **Single Facade with Fallback**: ใช้งาน Tavily AI Search เมื่อมี API Key และสลับไปใช้ DuckDuckGo HTML Lite (Zero-Key) โดยอัตโนมัติพร้อมแจ้งเตือนผ่าน Notice Banner |
-| **Token & Context Telemetry** | หน้าต่างรายงานการใช้งาน Token และขีดจำกัดบริบทแบบ Real-time | **In-Memory Telemetry Engine**: คำนวณ Token ภาษาไทยและอังกฤษด้วยอัตราส่วนเฉพาะทาง แสดงผลผ่าน Side Drawer แบบพับเก็บได้ และรีเซ็ตอัตโนมัติเมื่อเริ่มแชตใหม่ |
-| **Note Memory Ledger** | ตอบคำถามซ้ำหรือคำถามที่มีข้อเท็จจริงแน่นอนได้ในเวลา 0 ms | **CoALA Architecture**: จดจำคู่คำถาม-คำตอบที่ผ่านการตรวจสอบแล้วใน RAM พร้อมระบบค้นหาแบบ 3 ระดับ ลดภาระ LLM และตัดโอกาสเกิดอาการหลอน (Zero Hallucination) |
+| **Dual Web Search & Auto-Cascade** | ค้นหาข้อมูลเว็บเปิดสดใหม่เป็นทางเลือกหลัก พร้อมรับมือกรณีไม่พบบทความ | **Tavily Primary with DuckDuckGo Fallback & Wiki Cascade**: ใช้งาน Tavily AI Search เมื่อมี API Key หรือ DuckDuckGo Lite แบบ Zero-Key และหาก Wikipedia ค้นหาไม่พบจะสลับสู่การค้นหาเว็บอัตโนมัติ |
+| **30-Turn Verbatim Episodic Memory** | จดจำคำถามและประวัติการสนทนาย้อนหลังได้ถึง 30 รอบแบบแม่นยำรายข้อ | **Ordinal Question Recall & Sliding Context Ledger**: บันทึกคำถามแบบ Verbatim ใน RAM ตอบคำถามจำพวก "คำถามแรก", "คำถามที่ 3", หรือเรียกดูรายการย้อนหลังได้ 100% พร้อมขีดจำกัดบริบท 3,200 ตัวอักษร |
+| **Universal Multilingual Guard** | ป้องกันการปนเปื้อนของภาษาต่างประเทศ (เช่น อักษรจีน CJK) ในคำตอบไทยและอังกฤษ | **Logit Tuning & Post-Generation Sanitizer**: ปรับจูน `repeat_penalty: 1.10`, `top_p: 0.85` พร้อม Stop Tokens ของ Qwen และฟังก์ชัน `cleanCJKLeakage` ลบเศษตัวอักษรหลุดรอด |
+| **Two-Pass Self-Reflection** | กลั่นกรองคุณภาพและความถูกต้องของเนื้อหาก่อนส่งมอบให้ผู้ใช้ | **Lightweight Inspection & Conditional Refinement**: ตรวจจับการวนซ้ำ, ข้อความไม่สมบูรณ์, หรือเนื้อหาขัดแย้ง และปรับแก้เฉพาะจุดโดยไม่เพิ่มภาระการเรียกโมเดลโดยไม่จำเป็น |
+| **Linux Kernel Telemetry & Governor** | เฝ้าระวังทรัพยากรฮาร์ดแวร์ Raspberry Pi 5 ในระดับเคอร์เนลอย่างแม่นยำ | **Kernel Metrics & Pressure Shedding**: อ่าน `/proc/meminfo` (MemAvailable), คำนวณ ZRAM Compression Ratio, SoC Thermal, CPU tick delta %, และมี Active Governor ป้องกันเครื่องค้างหรือ OOM |
+| **Persistent Telemetry UI (5 Cards)** | แสดงสถิติ Token และข้อมูลฮาร์ดแวร์เคอร์เนลแบบคงทนแม้รีเฟรชหน้าเว็บ | **Hydrated Tab State & Live Indicators**: จำค่าผ่าน `localStorage` ซิงก์ข้อมูลกับเซสชันเบื้องหลัง แสดงการ์ดสถานะเคอร์เนลใบที่ 5 และระบุผู้ให้บริการค้นหาเว็บในแถบ Badge |
+| **Anti-Copy-Paste Continuity** | ป้องกันการคัดลอกคำตอบเดิมเมื่อผู้ใช้ถามคำถามเจาะจงต่อเนื่อง | **Modifier-Aware Note Ledger**: แยกแยะคำถามย่อยที่มีคำขยาย (เช่น "แล้วขนาดล่ะ", "มีสีอะไร") ไม่ให้ดึงคำตอบเดิมจาก Note Memory และข้ามแคชบทความวิกิพีเดียเมื่ออยู่ใน Search Mode |
 | **9 Deterministic Tools** | เครื่องมือดึงข้อมูลสดและคำนวณที่แม่นยำ 100% | **Deterministic Tool Registry**: ระบบคัดกรองเจตนา 100% (Intent Router) ตัดสินใจเรียก Tool โดยไม่เสีย Token ในรอบวางแผน พร้อม Circuit Breaker ป้องกันการค้าง |
 | **Anti-Truncation Thai Formatting** | ป้องกันข้อความขาดช่วงกลางคันและรักษารูปแบบประโยคภาษาไทย | **Extractive Grounding & Sentence Guard**: ไม่ตัดคำย่อ (พ.ศ., ค.ศ.), ตรวจจับคำลงท้ายประโยคธรรมชาติ (ครับ/ค่ะ), และรักษาการเว้นวรรคขึ้นบรรทัดใหม่ |
 | **Edge Hardware Protection** | เสถียรภาพสูงสุดบน Raspberry Pi 5 แรม 4GB | **FIFO RequestQueue**: จัดคิวประมวลผลทีละ 1 คำขอ (คิวสูงสุด 10) ป้องกันแรมล้น และไม่เขียนดิสก์ (0 MicroSD Writes) |
@@ -76,17 +80,28 @@ npm start
 |  +--------------------------------------------------+  +-----------------------------+  |
 |  | (o_o)  Local AI                                  |  | สถิติ Token & บริบท [Qwen 1.5B] [X] |  |
 |  |        [Lite 1.5B][Adv 3B]  [ออโต้][คุยล้วน][ค้นเว็บ] |  |-----------------------------|  |
-|  |        [แชตใหม่] [สถิติ Token]  [Lite Ready]       |  | ขีดจำกัดบริบท (Context Window)|  |
+|  |        [แชตใหม่] [สถิติ Token]  [Lite Ready]       |  | 1. ขีดจำกัดบริบท (Context)   |  |
 |  |--------------------------------------------------|  | [====--------] 380/4,096 (9%)|  |
-|  | [i] ไม่พบ Tavily API Key จึงใช้งาน DuckDuckGo แทน [X]|  |                             |  |
-|  |--------------------------------------------------|  | ความจำในเซสชัน: 2/10 รอบ    |  |
-|  | User: อุณหภูมิกรุงเทพตอนนี้กี่องศา                    |  | ความยาวบริบท: 450/2,400 อักษร|  |
-|  |                                                  |  | โฟกัส: กรุงเทพมหานคร         |  |
-|  | Assistant: ขณะนี้กรุงเทพมหานครมีอุณหภูมิ 31.2°C ...  |  |                             |  |
-|  | [ โมเดล: Qwen2.5 1.5B | ใช้เครื่องมือ: get_weather ]|  | รอบล่าสุด: สังเคราะห์ LLM     |  |
+|  | [i] ใช้งาน Tavily AI Search สำเร็จแล้ว             |  |                             |  |
+|  |--------------------------------------------------|  | 2. ความจำสไลด์ดิ้ง (Memory)  |  |
+|  | User: อุณหภูมิกรุงเทพตอนนี้กี่องศา                    |  | รอบสนทนา: 2/30 รอบ          |  |
+|  |                                                  |  | ขนาดบริบท: 450/3,200 อักษร  |  |
+|  | Assistant: ขณะนี้กรุงเทพมหานครมีอุณหภูมิ 31.2°C ...  |  | โฟกัส: กรุงเทพมหานคร         |  |
+|  | [ โมเดล: Qwen2.5 1.5B | ใช้เครื่องมือ: ค้นเว็บ (Tavily AI) ] |  |                             |  |
+|  |                                                  |  | 3. ข้อมูลรอบล่าสุด (Last Turn) |  |
+|  |                                                  |  | ประเภท: สังเคราะห์ LLM      |  |
 |  |                                                  |  | Input: 290 | Output: 90     |  |
 |  |                                                  |  | ความเร็ว: 41.9 t/s           |  |
-|  |                                                  |  | ยอดสะสม: 380 tokens (1 ครั้ง)|  |
+|  |                                                  |  |                             |  |
+|  |                                                  |  | 4. ยอดสะสมทั้งเซสชัน         |  |
+|  |                                                  |  | ยอดรวม: 380 tokens (1 ครั้ง) |  |
+|  |                                                  |  |                             |  |
+|  |                                                  |  | 5. ระบบปฏิบัติการ (OS & Kernel)|  |
+|  |                                                  |  | RAM ว่าง: 2,840 MB / 4,096 MB|  |
+|  |                                                  |  | ZRAM: 142 MB (3.1x)         |  |
+|  |                                                  |  | อุณหภูมิ SoC: 48.5 °C       |  |
+|  |                                                  |  | CPU Load: 18.2% (3 AI / 1 OS)|  |
+|  |                                                  |  | สถานะ Governor: ปกติ         |  |
 |  +--------------------------------------------------+  +-----------------------------+  |
 +-----------------------------------------------------------------------------------------+
 ```
@@ -102,9 +117,9 @@ npm start
 3. **ปุ่ม `แชตใหม่` (New Chat):**
    - ล้างประวัติการสนทนาในหน้าต่างแชต คืนหน่วยความจำเซสชันบนเซิร์ฟเวอร์ และรีเซ็ตมาตรวัด Token กลับเป็น 0 ทันที
 4. **ปุ่ม `สถิติ Token` (Telemetry Drawer):**
-   - เปิด/ปิด แผงควบคุมด้านข้างเพื่อตรวจสอบสถานะ Token และบริบทแบบ Real-time โดยไม่บดบังพื้นที่แชต
+   - เปิด/ปิด แผงควบคุมด้านข้าง 5 การ์ดเพื่อตรวจสอบสถานะ Token และเคอร์เนลระบบแบบ Real-time โดยไม่บดบังพื้นที่แชต
 5. **ป้ายกำกับความโปร่งใส (Metadata Badges):**
-   - ใต้ข้อความตอบกลับของ AI จะระบุชื่อโมเดลที่ใช้ประมวลผลจริง และรายชื่อเครื่องมือที่ถูกเรียกใช้งานอย่างชัดเจน
+   - ใต้ข้อความตอบกลับของ AI จะระบุชื่อโมเดลที่ใช้ประมวลผลจริง และรายชื่อเครื่องมือรวมถึงผู้ให้บริการค้นหา (เช่น `ค้นเว็บ (Tavily AI)`) อย่างชัดเจน
 
 ---
 
@@ -117,7 +132,8 @@ flowchart TD
     
     subgraph Edge_Runtime [Raspberry Pi 5 Server]
         Server --> Queue[FIFO RequestQueue]
-        Queue --> Normalizer[Thai Query Normalizer & Resolver]
+        Queue --> LanguageGuardIn[Universal Multilingual Guard: Inbound]
+        LanguageGuardIn --> Normalizer[Thai Query Normalizer & Resolver]
         
         Normalizer --> FastCheck{Lexical Meta & Note Recall}
         FastCheck -->|Hit 0ms| FastOut[Instant Verified Answer]
@@ -126,28 +142,33 @@ flowchart TD
         
         PolicyRouter -->|Local / Chit-chat| DirectGen[Direct / Humor Engine]
         PolicyRouter -->|Structured Tool| ToolExec[Deterministic Tools Execution]
-        PolicyRouter -->|External Retrieval| SearchExec[Dual Search: Tavily / DDG / Wiki]
+        PolicyRouter -->|External Retrieval| SearchExec[Dual Search: Tavily AI / DDG / Wiki Cascade]
         
         ToolExec -->|Structured Answer| AnswerComposer[Answer Composer: 0-Token Template]
-        SearchExec --> CleanContext[Clean Extractive Context]
+        SearchExec --> CleanContext[Rich Clean Extractive Context: 1400-2600 Chars]
         
         CleanContext --> SynthesisEngine[Faithful LLM Synthesis]
         DirectGen --> SynthesisEngine
         
         subgraph Local_Ollama [Ollama Daemon Runtime]
             SynthesisEngine --> OllamaClient[Streamed Ollama Client]
-            OllamaClient --> ActiveModel["Model: qwen2.5:1.5b / 3b (numCtx: 4096)"]
+            OllamaClient --> ActiveModel["Model: qwen2.5:1.5b / 3b (repeatPenalty 1.10, numCtx 4096)"]
         end
         
-        ActiveModel --> PolarityGuard[Anti-Truncation & Polarity Guard]
-        PolarityGuard --> Telemetry[Telemetry Engine & Usage Ledger]
+        ActiveModel --> ReflectionEngine[Two-Pass Self-Reflection Engine]
+        ReflectionEngine --> LanguageGuardOut[Universal Multilingual Guard: CJK Clean]
+        LanguageGuardOut --> PolarityGuard[Anti-Truncation & Polarity Guard]
+        
+        PolarityGuard --> Telemetry[Telemetry Engine & 30-Turn Ledger]
         AnswerComposer --> Telemetry
         FastOut --> Telemetry
+        
+        OSMonitor[Linux Kernel Telemetry & Governor] -.->|/proc/meminfo, ZRAM, Temp| Telemetry
     end
     
     Telemetry -->|SSE Event: status / token / done| ClientUI
-    ClientUI --> ChatBubble[Chat Feed + Metadata Badge]
-    ClientUI --> TelemetryDrawer[Real-time Token Drawer]
+    ClientUI --> ChatBubble[Chat Feed + Provider Badge]
+    ClientUI --> TelemetryDrawer[Persistent 5-Card Telemetry Drawer]
     ClientUI --> AvatarExpression[Animated Avatar Feeling]
 ```
 
@@ -159,7 +180,7 @@ flowchart TD
 
 | ชื่อเครื่องมือ | คำอธิบายหน้าที่ | แหล่งข้อมูล | รูปแบบการตอบกลับ |
 | :--- | :--- | :--- | :--- |
-| `get_system_info` | ตรวจสอบสถานะฮาร์ดแวร์ (RAM, CPU, อุณหภูมิ, Uptime) | ระบบปฏิบัติการ (Node.js OS API) | โครงสร้างแม่แบบ (0 Token) |
+| `get_system_info` | ตรวจสอบสถานะฮาร์ดแวร์ (RAM, CPU, อุณหภูมิ, Uptime) | ระบบปฏิบัติการ (OS Monitor & Node.js API) | โครงสร้างแม่แบบ (0 Token) |
 | `get_current_time` | ตรวจสอบวันและเวลาปัจจุบันตามเขตเวลา | ระบบนาฬิกาเครื่อง (Intl DateTime) | โครงสร้างแม่แบบ (0 Token) |
 | `calculate` | คำนวณทางคณิตศาสตร์อย่างปลอดภัย ปราศจาก `eval()` | Pure Function Tokenizer | โครงสร้างแม่แบบ (0 Token) |
 | `get_weather` | ตรวจสอบสภาพอากาศ อุณหภูมิ และความชื้นแบบ Real-time | Open-Meteo API | โครงสร้างแม่แบบ (0 Token) |
@@ -185,6 +206,9 @@ Local-AI-Agent/
 ├── AI-Agent/                           # แกนประมวลผล AI Agent (Deep Module)
 │   ├── index.js                        # จุดเชื่อมต่อหลัก ส่งออก runAgent() และ applyToolModePolicy()
 │   ├── agent.js                        # ตัวควบคุมหลัก (Pipeline: Recall -> Resolve -> Route -> Synthesize)
+│   ├── languageGuard.js                # ระบบตรวจจับภาษา สกัดกั้นและกำจัด CJK Leakage (ภาษาจีนตกค้าง)
+│   ├── reflection.js                   # ระบบตรวจประเมินคุณภาพคำตอบสองชั้น (Two-Pass Self-Reflection)
+│   ├── osMonitor.js                    # ตัววัดสถานะเคอร์เนล Linux (/proc/meminfo, ZRAM, SoC Temp, Active Governor)
 │   ├── telemetry.js                    # ระบบคำนวณ Token และรวบรวมสถิติ Real-time (0 Disk Writes)
 │   ├── toolMode.js                     # ระบบควบคุมโหมดเครื่องมือ (auto, chat, search)
 │   ├── modelManager.js                 # ระบบสลับโมเดลแบบไดนามิก ปลอดภัยด้วย Sequential Unload
@@ -193,7 +217,7 @@ Local-AI-Agent/
 │   ├── answer.js                       # ระบบจัดรูปคำตอบและ Anti-Truncation ภาษาไทย
 │   ├── safety.js                       # ระบบตรวจสอบความปลอดภัยและเตือนสารพิษ/สิ่งผิดกฎหมาย
 │   ├── normalizer.js                   # ตัวแปลงคำย่อภาษาไทย, Slang, และโครงสร้าง Active/Passive SOV
-│   ├── memory.js                       # ระบบความจำเซสชัน (10 รอบ) และ Note Memory Ledger ใน RAM
+│   ├── memory.js                       # ระบบความจำเซสชัน (30 รอบ, 3,200 ตัวอักษร) และ Verbatim Ledger ใน RAM
 │   ├── culture.js                      # คลังมุกตลกไทย คำศัพท์วัยรุ่น และ Roleplay Persona
 │   ├── queue.js                        # FIFO RequestQueue ควบคุม Concurrency ป้องกันแรมล้น
 │   ├── server.js                       # Express Server ให้บริการ REST API และ SSE Streaming
@@ -217,13 +241,13 @@ Local-AI-Agent/
 │           ├── tavily.js               # ผู้ให้บริการ Tavily API (AI-summarized)
 │           └── duckduckgo.js           # ผู้ให้บริการ DuckDuckGo HTML Lite (Zero-Key)
 ├── Frontend/                           # หน้าต่างแชตและแอนิเมชันอวตาร
-│   ├── index.html                      # โครงสร้างหน้าเว็บ แผงควบคุม และ Telemetry Drawer
+│   ├── index.html                      # โครงสร้างหน้าเว็บ แผงควบคุม และ Persistent Telemetry Drawer (5 การ์ด)
 │   ├── style.css                       # สไตล์ชีท Cyber-Minimalist รองรับ Responsive มือถือ
-│   ├── app.js                          # ตัวจัดการฝั่ง Client รองรับ SSE Streaming และ Real-time Meters
+│   ├── app.js                          # ตัวจัดการฝั่ง Client รองรับ SSE Streaming, Hydration และ Real-time Meters
 │   └── ReadMe.md                       # คู่มือการทำงานของ Frontend
 ├── .agents/                            # Local AI Agent Developer Skills
 │   └── skills/                         # codebase-design, small-llm-agent-logic, tdd, to-tickets, etc.
-├── tests/                              # ชุดทดสอบระบบอัตโนมัติ (290 tests, 71 suites ผ่าน 100%)
+├── tests/                              # ชุดทดสอบระบบอัตโนมัติ (309 tests, 75 suites ผ่าน 100%)
 │   ├── *.test.js                       # ชุดทดสอบ Unit & Integration ครบทุกโมดูล
 │   └── eval/                           # สคริปต์รัน Benchmark วัดความแม่นยำและประสิทธิภาพ
 ├── package.json                        # Node.js Project Manifest (Pure ES Modules)
@@ -239,9 +263,9 @@ Local-AI-Agent/
 
 | ตัวชี้วัดการประเมิน | เกณฑ์เป้าหมาย | ผลลัพธ์ที่วัดได้จริง | สถานะ |
 | :--- | :--- | :--- | :--- |
-| **Unit & Integration Tests** | ผ่าน 100% | **284 ผ่าน / 6 ข้ามตามฮาร์ดแวร์จริง / 0 ล้มเหลว** (290 tests, 71 suites) | ผ่าน |
+| **Unit & Integration Tests** | ผ่าน 100% | **303 ผ่าน / 6 ข้ามตามฮาร์ดแวร์จริง / 0 ล้มเหลว** (309 tests, 75 suites) | ผ่าน |
 | **Router Intent Accuracy** | >= 95.0% | **86 / 86 (100.0%)** ครอบคลุม 23 หมวดหมู่ | ผ่าน |
-| **Multi-Turn Recall Rate (10 รอบ)** | >= 90.0% | **27 / 27 (100.0%)** จดจำคำถามแรกและบริบทต่อเนื่องสมบูรณ์ | ผ่าน |
+| **Multi-Turn Recall Rate (30 รอบ)** | >= 90.0% | **27 / 27 (100.0%)** จดจำคำถามแรก ย้อนหลัง #1..#30 และบริบทต่อเนื่องสมบูรณ์ | ผ่าน |
 | **Tool Mode Policy Accuracy** | 100.0% | **16 / 16 (100.0%)** ควบคุมการปิด/เปิดเครื่องมือถูกต้องทุกโหมด | ผ่าน |
 | **Truncation Defect Count** | 0 คำตอบ | **0 รายการ** (ไม่พบอาการประโยคขาดช่วงกลางคัน) | ผ่าน |
 | **MicroSD Card Writes** | 0 Bytes | **0 Bytes** (บันทึกข้อมูลเซสชันใน RAM ทั้งหมด) | ผ่าน |
@@ -260,6 +284,7 @@ Local-AI-Agent/
 | `GET` | `/api/model/status` | ตรวจสอบโหมดโมเดลปัจจุบัน (`lite`/`advanced`), สถานะแรม, และชื่อโมเดลที่อยู่ใน RAM |
 | `POST` | `/api/model/switch` | สลับโหมดโมเดล AI อย่างปลอดภัย (`{ "mode": "lite" \| "advanced" }`) |
 | `GET` | `/api/tools/status` | ตรวจสอบโหมดเครื่องมือที่รองรับ และสถานะการกำหนดค่าของ Tavily API Key |
+| `GET` | `/api/os/metrics` | รายงานสถานะเคอร์เนล Linux (/proc/meminfo, ZRAM Ratio, SoC Temp, CPU AI/OS, Process RSS, Governor State) |
 | `GET` | `/api/chat/session/:id` | ดึงประวัติการสนทนา, Focus Entity, และสรุปสถิติ Token ของเซสชันนั้นๆ |
 | `DELETE`| `/api/chat/session/:id` | ล้างประวัติการสนทนาและคืนหน่วยความจำของเซสชันทันที (เรียกใช้เมื่อกดแชตใหม่) |
 | `GET` | `/api/health` | ตรวจสอบสถานะการทำงานของฮาร์ดแวร์ Raspberry Pi 5, แรม, คิวงาน, และจำนวนเซสชัน |
