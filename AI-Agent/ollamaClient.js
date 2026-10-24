@@ -1,7 +1,8 @@
 import ollama from 'ollama';
 
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:1.5b';
-const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_TIMEOUT_MS = Number(process.env.OLLAMA_STALL_TIMEOUT_MS) || 300000;
+const DEFAULT_MAX_TIMEOUT_MS = Number(process.env.OLLAMA_MAX_TIMEOUT_MS) || 600000;
 const DEFAULT_KEEP_ALIVE = process.env.OLLAMA_KEEP_ALIVE || '2m';
 
 // Pi 5 has 4 cores. Leave one for node and the OS, and keep the KV cache sized for 4k context.
@@ -19,7 +20,7 @@ export async function queryOllama({
   numCtx = NUM_CTX,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   stallTimeoutMs = undefined,
-  maxTimeoutMs = 240000,
+  maxTimeoutMs = DEFAULT_MAX_TIMEOUT_MS,
   temperature = 0.2,
   numPredict = 768,
   repeatPenalty = 1.10,

@@ -4,10 +4,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { runAgent } from './agent.js';
 import { sessionMemory } from './memory.js';
-import { RequestQueue, requestQueue } from './queue.js';
+import { RequestQueue, requestQueue, formatClientDeviceLabel } from './queue.js';
 import { ModelManager, modelManager } from './modelManager.js';
 import { TOOL_MODES, normalizeToolMode } from './toolMode.js';
-import { isTavilyConfigured } from './tools/search/tavily.js';
+import { isTavilyConfigured, getTavilyDiagnostics } from './tools/search/tavily.js';
 import { getOSSnapshot } from './osMonitor.js';
 import { buildUsagePayload } from './telemetry.js';
 
@@ -65,7 +65,19 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
   });
 
   app.post('/api/model/switch', async (req, res) => {
-    const { mode } = req.body || {};
+    const { mode, rejectIfBusy } = req.body || {};
+    const managerState = manager?.getState ? manager.getState() : 'ready';
+    const isBusy = queue.activeCount > 0 || queue.pendingCount > 0 || managerState === 'switching' || managerState === 'loading';
+
+    if (rejectIfBusy === true && isBusy) {
+      return res.status(409).json({
+        success: false,
+        code: 'MODEL_BUSY_GENERATING',
+        error: 'ขณะนี้ AI กำลังประมวลผลคำถามอยู่ กรุณารอให้ตอบคำถามเสร็จสิ้นก่อนจึงจะสลับโหมดโมเดลได้ครับ',
+        status: manager?.getStatusSync ? manager.getStatusSync() : null
+      });
+    }
+
     try {
       const result = await queue.enqueue(() => manager.switchMode(mode));
       if (!result?.success) {
@@ -83,11 +95,19 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
   });
 
   // Tool Modes and Provider status endpoint
-  app.get('/api/tools/status', (_req, res) => {
+  app.get('/api/tools/status', async (_req, res) => {
+    const tavilyDiagnostics = await getTavilyDiagnostics({ probe: false });
     return res.json({
       modes: TOOL_MODES,
-      tavilyConfigured: isTavilyConfigured()
+      tavilyConfigured: isTavilyConfigured(),
+      tavilyDiagnostics
     });
+  });
+
+  app.get('/api/tools/diagnostics', async (req, res) => {
+    const shouldProbe = req.query?.probe === '1' || req.query?.probe === 'true';
+    const diagnostics = await getTavilyDiagnostics({ probe: shouldProbe });
+    return res.json(diagnostics);
   });
 
   app.post('/api/chat', async (req, res) => {
@@ -108,21 +128,31 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
       }
 
       const history = Array.isArray(conversationHistory) ? conversationHistory : [];
+      const clientLabel = formatClientDeviceLabel(req.headers['user-agent'], effectiveSessionId);
+      const modelMode = manager?.getMode ? manager.getMode() : 'lite';
 
       // Enforce strict FIFO serialization through RequestQueue to prevent Pi 5 OOM
-      const result = await queue.enqueue(async () => {
-        const activeModel = agentOptions.model || (manager?.getCurrentModel ? manager.getCurrentModel() : 'qwen2.5:1.5b');
-        return runAgent({
-          message: message.trim(),
-          conversationHistory: history,
+      const result = await queue.enqueue(
+        async () => {
+          const activeModel = agentOptions.model || (manager?.getCurrentModel ? manager.getCurrentModel() : 'qwen2.5:1.5b');
+          return runAgent({
+            message: message.trim(),
+            conversationHistory: history,
+            sessionId: effectiveSessionId,
+            options: {
+              ...agentOptions,
+              model: activeModel,
+              toolMode: activeToolMode
+            }
+          });
+        },
+        {
           sessionId: effectiveSessionId,
-          options: {
-            ...agentOptions,
-            model: activeModel,
-            toolMode: activeToolMode
-          }
-        });
-      });
+          clientLabel,
+          taskType: 'chat',
+          modelMode
+        }
+      );
 
       if (effectiveSessionId) {
         result.sessionId = effectiveSessionId;
@@ -171,46 +201,74 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
       });
     }
 
+    req.socket?.setTimeout?.(0);
+    res.socket?.setTimeout?.(0);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
     const sendSSE = (event, data) => {
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      if (!res.writableEnded) {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      }
     };
 
     const heartbeatTimer = setInterval(() => {
-      res.write(': ping\n\n');
-    }, 15000);
+      if (!res.writableEnded) {
+        res.write(': ping\n\n');
+      }
+    }, 10000);
 
     const history = Array.isArray(conversationHistory) ? conversationHistory : [];
+    const clientLabel = formatClientDeviceLabel(req.headers['user-agent'], effectiveSessionId);
+    const modelMode = manager?.getMode ? manager.getMode() : 'lite';
+    const reqAbortController = new AbortController();
+
+    req.on('aborted', () => reqAbortController.abort());
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        reqAbortController.abort();
+      }
+    });
 
     try {
-      await queue.enqueue(async () => {
-        const activeModel = agentOptions.model || (manager?.getCurrentModel ? manager.getCurrentModel() : 'qwen2.5:1.5b');
-        const result = await runAgent({
-          message: message.trim(),
-          conversationHistory: history,
-          sessionId: effectiveSessionId,
-          options: {
-            ...agentOptions,
-            model: activeModel,
-            toolMode: activeToolMode,
-            onStatus: (st) => sendSSE('status', st),
-            onToken: (tok) => sendSSE('token', { token: tok })
+      await queue.enqueue(
+        async () => {
+          const activeModel = agentOptions.model || (manager?.getCurrentModel ? manager.getCurrentModel() : 'qwen2.5:1.5b');
+          const result = await runAgent({
+            message: message.trim(),
+            conversationHistory: history,
+            sessionId: effectiveSessionId,
+            options: {
+              ...agentOptions,
+              model: activeModel,
+              toolMode: activeToolMode,
+              onStatus: (st) => sendSSE('status', st),
+              onToken: (tok) => sendSSE('token', { token: tok })
+            }
+          });
+
+          if (effectiveSessionId) {
+            result.sessionId = effectiveSessionId;
           }
-        });
 
-        if (effectiveSessionId) {
-          result.sessionId = effectiveSessionId;
+          sendSSE('done', result);
+          return result;
+        },
+        {
+          sessionId: effectiveSessionId,
+          clientLabel,
+          taskType: 'chat',
+          modelMode,
+          signal: reqAbortController.signal,
+          onQueueUpdate: (snap) => sendSSE('queue', snap)
         }
-
-        sendSSE('done', result);
-        return result;
-      });
+      );
     } catch (error) {
-      if (error?.status === 503) {
+      if (error?.name === 'AbortError' || error?.status === 499) {
+        // Client disconnected or cancelled queue request cleanly
+      } else if (error?.status === 503) {
         sendSSE('error', {
           text: 'ขณะนี้มีผู้ใช้งานพร้อมกันจำนวนมาก กรุณารอสักครู่แล้วลองใหม่อีกครั้งครับ',
           status: 'error',
@@ -250,6 +308,22 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
 
   app.get('/api/os/metrics', async (_req, res) => {
     const snapshot = await getOSSnapshot();
+    return res.json(snapshot);
+  });
+
+  app.get('/api/queue/status', (req, res) => {
+    const viewerSessionId = req.query?.sessionId || req.headers['x-session-id'] || null;
+    const snapshot = queue.getQueueSnapshot
+      ? queue.getQueueSnapshot(viewerSessionId)
+      : {
+          schedulerPolicy: 'SCHED_FIFO',
+          activeCount: queue.activeCount,
+          pendingCount: queue.pendingCount,
+          totalProcessed: queue.totalProcessed,
+          yourJob: null,
+          runningJob: null,
+          waitingJobs: []
+        };
     return res.json(snapshot);
   });
 

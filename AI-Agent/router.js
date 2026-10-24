@@ -348,8 +348,11 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     };
   }
 
-  // 15. Person / Office-holder Questions (Wikipedia)
-  const hasPersonOrOfficeRole = !isSportsQuery && !isModelIdentityQuery && /(?:ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|เกิด(?:ปี|เมื่อ|ที่)|เสียชีวิต|ตายเมื่อ|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who is|prime minister|president)/i.test(raw);
+  // 15. Person / Office-holder / Creator Questions (Wikipedia)
+  const hasPersonOrOfficeRole = !isSportsQuery && !isModelIdentityQuery && (
+    /(?:ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|เกิด(?:ปี|เมื่อ|ที่)|เสียชีวิต|ตายเมื่อ|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who is|prime minister|president)/i.test(raw) ||
+    /ใคร(?:เป็น(?:ผู้|คน)?)?(?:สร้าง|คิดค้น|ก่อตั้ง|พัฒนา|แต่ง|เขียน|ประพันธ์|ร้อง|กำกับ|แสดงนำ|ค้นพบ)|เจ้าของบริษัท|เป็นของบริษัทอะไร|ผู้บริหารสูงสุด|ซีอีโอ|\bceo\b/i.test(raw)
+  );
   if (hasPersonOrOfficeRole) {
     const topic = extractTopic(raw, focusEntity) || (raw.includes('นายก') ? 'นายกรัฐมนตรีไทย' : raw);
     return {
@@ -362,8 +365,12 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
 
   // 16. Explicit Web Search Intent & Modern Live Information (Tavily AI Primary)
   const isExplicitWebSearch = /(?:ค้นเว็บ|เสิร์ชเว็บ|หาในเน็ต|ค้นหาในเว็บ|เสิร์ชกูเกิล|เสิร์ชดูหน่อย|เสิร์ชหา|ค้นหาเว็บ|search\s*web)/i.test(raw);
-  const isModernLiveQuery = /(?:202[4-9]|256[7-9]|อัปเดตล่าสุด|รุ่นล่าสุด|เวอร์ชันล่าสุด|ใหม่ล่าสุด|เทรนด์ล่าสุด|รีวิว|โปรโมชั่น|ซื้อที่ไหน|ราคา.*เท่าไหร่|ราคา.*กี่บาท)/i.test(raw) &&
-    !/(?:คืออะไร|คือใคร|ประวัติ|หมายถึงอะไร)/i.test(raw);
+  const isModernLiveQuery = (
+    /(?:202[4-9]|256[7-9]|อัปเดตล่าสุด|รุ่นล่าสุด|เวอร์ชันล่าสุด|ใหม่ล่าสุด|เทรนด์ล่าสุด|รีวิว|โปรโมชั่น|ซื้อที่ไหน)/i.test(raw) ||
+    /(?:pm\s*2\.?5|ค่าฝุ่น|ดัชนีคุณภาพอากาศ|\baqi\b|แผ่นดินไหว|น้ำท่วมวันนี้|สถานการณ์.*ล่าสุด|สถานการณ์ปัจจุบัน)/i.test(raw) ||
+    /(?:อันดับโลก|ตารางคะแนน|ใครชนะเลือกตั้ง|แชมป์ล่าสุด|ตอนนี้ใครเป็น)/i.test(raw) ||
+    /(?:ราคา|ค่าสมัคร|ค่ารถ|ค่าเทอม|ค่าบริการ|เงินเดือน).*(?:เท่าไหร่|กี่บาท)/i.test(raw)
+  ) && !/(?:คืออะไร|คือใคร|ประวัติ|หมายถึงอะไร)/i.test(raw);
 
   if (isExplicitWebSearch || isModernLiveQuery) {
     const query = (isExplicitWebSearch && norm.searchCandidates[0]) ? norm.searchCandidates[0] : raw.trim();
@@ -377,7 +384,8 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
 
   // 17. Knowledge & Conceptual Questions (Wikipedia)
   const isAdvisoryOrCreative = /(?:แนะนำ|ช่วยคิด|ไอเดีย|สอน|วิธี|ทำยังไง|ทำอย่างไร|ตั้งชื่อ|แต่ง|เขียน|เปรียบเทียบ|โค้ด|syntax)/i.test(raw);
-  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ข้อมูลเกี่ยวกับ|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบายเรื่อง|อธิบายเรื่อง|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|แห่ง))/i.test(raw);
+  const isPracticalExclude = /(?:กิน.*ได้ไหม|อันตรายไหม|เป็นพิษไหม|ทำไม|ต่างกันยังไง|ต่างกันอย่างไร|รุ่นไหนดี|อันไหนดี|ที่ไหนดี|ช่วงเดือนไหน)/i.test(raw);
+  const isKnowledgePattern = !isPracticalExclude && /(?:คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ตั้งอยู่ที่ไหน|อยู่จังหวัดอะไร|อยู่ประเทศอะไร|เมืองหลวงของ|สกุลเงินของ|ข้อมูลเกี่ยวกับ|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบายเรื่อง|อธิบายเรื่อง|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|(?:ก่อตั้ง|สร้างขึ้น|เปิดตัว|วางจำหน่าย|เข้าฉาย|เริ่มใช้|ค้นพบ)\s*(?:เมื่อไหร่|เมื่อใด|ปีไหน|ปีอะไร|พ\.ศ\.\s*อะไร|ค\.ศ\.\s*อะไร)|ตรงกับวันที่เท่าไหร่|(?:สูง|ยาว|ลึก|กว้าง|พื้นที่|ห่างกัน)\s*(?:เท่าไหร่|เท่าใด|กี่)|ประชากรกี่|มีทั้งหมดกี่|มีกี่\s*(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|แห่ง|คน|ตอน|ภาค|รุ่น|ชนิด|ประเภท|ดวง|ดาว))/i.test(raw);
 
   if (!isFeedbackOrCorrection && !isAdvisoryOrCreative && (isKnowledgePattern || (norm.isKnowledgeIntent && !norm.isYesNoOrPractical) || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))) {
     const topic = norm.canonicalTopic || extractTopic(raw, focusEntity) || raw;

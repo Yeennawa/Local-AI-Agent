@@ -68,7 +68,7 @@ async function searchWikipediaFallback(query, timeoutMs = WIKI_FALLBACK_TIMEOUT_
 export const webSearchTool = {
   name: 'search_web',
   description: 'Search the web for real-time information, everyday practical questions, how-tos, slang, and cultural queries.',
-  timeoutMs: 12000,
+  timeoutMs: 18000,
   parameters: {
     type: 'object',
     properties: {
@@ -96,6 +96,7 @@ export const webSearchTool = {
     let provider = null;
     let notice = null;
     let directAnswer = null;
+    let tavilyFailureReason = null;
 
     // 1. Primary Provider: Tavily AI Search (if configured with API key)
     const tavilyConfigured = isTavilyConfigured();
@@ -106,6 +107,24 @@ export const webSearchTool = {
         provider = 'tavily';
         if (tavilyOutcome.answer) {
           directAnswer = tavilyOutcome.answer;
+        }
+      } else if (!tavilyOutcome.success) {
+        tavilyFailureReason = tavilyOutcome.reason || 'unknown';
+        if (tavilyFailureReason === 'auth_failed_401') {
+          notice = {
+            code: 'tavily_auth_failed',
+            message: 'Tavily API Key ไม่ถูกต้องหรือถูกปฏิเสธ (HTTP 401) ระบบจึงสลับไปใช้ DuckDuckGo แทน'
+          };
+        } else if (tavilyFailureReason === 'quota_exceeded_429') {
+          notice = {
+            code: 'tavily_quota_exceeded',
+            message: 'โควตาการใช้งาน Tavily API เต็มหรือถูกจำกัดความถี่ (HTTP 429/432) ระบบจึงสลับไปใช้ DuckDuckGo แทน'
+          };
+        } else if (tavilyFailureReason === 'timeout' || tavilyFailureReason === 'network_error') {
+          notice = {
+            code: `tavily_${tavilyFailureReason}`,
+            message: `เชื่อมต่อเซิร์ฟเวอร์ Tavily ไม่สำเร็จ (${tavilyFailureReason}) ระบบจึงสลับไปใช้ DuckDuckGo แทน`
+          };
         }
       }
     } else {
@@ -135,9 +154,20 @@ export const webSearchTool = {
     }
 
     if (results.length === 0) {
+      if (tavilyFailureReason && !notice) {
+        notice = {
+          code: `tavily_${tavilyFailureReason}`,
+          message: `ค้นหาผ่าน Tavily ไม่สำเร็จ (${tavilyFailureReason}) และไม่พบข้อมูลจากแหล่งสำรอง`
+        };
+      }
+      const diagSuffix = tavilyFailureReason
+        ? ` (สาเหตุฝั่ง Tavily: ${tavilyFailureReason})`
+        : !tavilyConfigured
+          ? ' (ยังไม่ได้ตั้งค่า Tavily API Key บนเซิร์ฟเวอร์)'
+          : '';
       return {
         found: false,
-        message: `ไม่พบข้อมูลบนเว็บสำหรับ "${cleanQuery}"`,
+        message: `ไม่พบข้อมูลบนเว็บสำหรับ "${cleanQuery}"${diagSuffix}`,
         provider: null,
         providerLabel: null,
         notice

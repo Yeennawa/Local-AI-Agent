@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import process from 'node:process';
 
 let prevCpuTicks = null;
+let lastSampleTime = 0;
+let cachedCpuPercent = 0;
 
 function sampleCpuTicks() {
   const cpus = os.cpus() || [];
@@ -24,21 +26,40 @@ function sampleCpuTicks() {
 
 // Initialize tick baseline
 prevCpuTicks = sampleCpuTicks();
+lastSampleTime = Date.now();
 
-export function computeCpuPercent() {
+export function computeCpuPercent({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && prevCpuTicks && (now - lastSampleTime) < 800) {
+    return cachedCpuPercent;
+  }
+
   const current = sampleCpuTicks();
   if (!prevCpuTicks) {
     prevCpuTicks = current;
-    return 0;
+    lastSampleTime = now;
+    return cachedCpuPercent;
   }
 
   const idleDelta = current.idle - prevCpuTicks.idle;
   const totalDelta = current.total - prevCpuTicks.total;
-  prevCpuTicks = current;
+  if (totalDelta <= 0) {
+    return cachedCpuPercent;
+  }
 
-  if (totalDelta <= 0) return 0;
+  prevCpuTicks = current;
+  lastSampleTime = now;
   const usage = Math.max(0, Math.min(100, ((totalDelta - idleDelta) / totalDelta) * 100));
-  return Number(usage.toFixed(1));
+  cachedCpuPercent = Number(usage.toFixed(1));
+  return cachedCpuPercent;
+}
+
+// Background 2-second rolling kernel tick sampler (unref'd so tests never hang)
+const cpuSamplerTimer = setInterval(() => {
+  computeCpuPercent({ force: true });
+}, 2000);
+if (typeof cpuSamplerTimer.unref === 'function') {
+  cpuSamplerTimer.unref();
 }
 
 export function parseProcMeminfo() {

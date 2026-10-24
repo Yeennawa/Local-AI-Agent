@@ -11,7 +11,9 @@ import {
   formatCleanContext,
   polishAnswerText,
   verifyAndGroundAnswer,
-  SYSTEM_ASSISTANT_PROMPT
+  SYSTEM_ASSISTANT_PROMPT,
+  GROUNDED_RAG_PROMPT,
+  PARAMETRIC_SAFE_PROMPT
 } from './answer.js';
 import { getSafetyKnowledgeHint } from './safety.js';
 import { applyToolModePolicy, normalizeToolMode } from './toolMode.js';
@@ -43,9 +45,54 @@ export function sanitizeAnswerText(text, userMessage = '', defaultSummary = '') 
   return polishAnswerText(text, userMessage, defaultSummary);
 }
 
+/**
+ * Guards SSE token streams from leaking raw JSON wrappers (e.g. {"text": "...", "feeling": "..."})
+ * or fenced markdown JSON blocks if the small LLM slips into JSON output mode.
+ */
+export function createSafeTokenStream(onToken) {
+  if (typeof onToken !== 'function') {
+    return { handler: undefined, wasBuffered: () => false, hasEmitted: () => false };
+  }
+
+  let started = false;
+  let bufferingJson = false;
+  let prefixBuffer = '';
+  let emittedCount = 0;
+
+  const handler = (chunk) => {
+    if (typeof chunk !== 'string' || !chunk) return;
+    if (!started) {
+      prefixBuffer += chunk;
+      const trimmed = prefixBuffer.trimStart();
+      if (!trimmed) return;
+      started = true;
+      if (trimmed.startsWith('{') || trimmed.startsWith('```')) {
+        bufferingJson = true;
+        return;
+      }
+      emittedCount += 1;
+      onToken(prefixBuffer);
+      prefixBuffer = '';
+      return;
+    }
+
+    if (!bufferingJson) {
+      emittedCount += 1;
+      onToken(chunk);
+    }
+  };
+
+  return {
+    handler,
+    wasBuffered: () => bufferingJson,
+    hasEmitted: () => emittedCount > 0
+  };
+}
+
 async function synthesizeAnswer({ model, chatFn, history, message, cleanContext, personaPrompt, onToken, onStatus }) {
   const activeLabel = /3b/i.test(model) ? 'Qwen2.5 3B (Advanced Mode)' : 'Qwen2.5 1.5B (Lite Mode)';
-  let systemContent = `คุณคือ Max ผู้ช่วย AI บน Raspberry Pi (ขณะนี้ทำงานด้วยโมเดล ${activeLabel})\n${SYSTEM_ASSISTANT_PROMPT}`;
+  const baseSystemPrompt = cleanContext ? GROUNDED_RAG_PROMPT : PARAMETRIC_SAFE_PROMPT;
+  let systemContent = `คุณคือ Max ผู้ช่วย AI บน Raspberry Pi (ขณะนี้ทำงานด้วยโมเดล ${activeLabel})\n${baseSystemPrompt}`;
   if (personaPrompt) {
     systemContent = `${personaPrompt}\n\n${systemContent}`;
   }
@@ -62,6 +109,8 @@ async function synthesizeAnswer({ model, chatFn, history, message, cleanContext,
   const estimatedPromptTokens = estimateMessagesTokens(messages);
   onStatus?.({
     status: 'synthesizing',
+    modelLabel: activeLabel,
+    hasReference: Boolean(cleanContext),
     estimatedPromptTokens,
     maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS
   });
@@ -256,6 +305,13 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
   };
 
   try {
+    onStatus?.({
+      status: 'analyzing',
+      mode: toolMode,
+      modelLabel: activeModelLabel,
+      resolvedTopic: resolved.isFollowup ? effectiveMessage : null
+    });
+
     const useRouter = options.useRouter !== undefined ? options.useRouter : true;
     const rawRoute = useRouter
       ? routeIntent({ message: effectiveMessage, history, focusEntity: resolved.targetEntity || focusEntity })
@@ -286,9 +342,30 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
         let activeToolName = route.toolCall.name;
         if (toolRegistry.hasTool(activeToolName)) {
           const toolLabel = getToolLabel(activeToolName);
-          onStatus?.({ status: 'using_tool', tool: activeToolName, params: route.toolCall.params, label: toolLabel });
+          const rawPreview = route.toolCall.params?.query ||
+            route.toolCall.params?.topic ||
+            route.toolCall.params?.location ||
+            route.toolCall.params?.expression ||
+            route.toolCall.params?.category ||
+            '';
+          onStatus?.({
+            status: 'using_tool',
+            tool: activeToolName,
+            params: route.toolCall.params,
+            label: toolLabel,
+            queryPreview: clip(String(rawPreview), 60)
+          });
           let execResult = await toolRegistry.executeTool(activeToolName, route.toolCall.params);
           toolsUsed.push(execResult);
+
+          onStatus?.({
+            status: 'tool_done',
+            tool: activeToolName,
+            label: toolLabel,
+            providerLabel: execResult.result?.providerLabel || null,
+            found: Boolean(execResult.success && execResult.result?.found !== false),
+            durationMs: execResult.durationMs || 0
+          });
 
           if (execResult.success && execResult.result?.notice) {
             onStatus?.({
@@ -301,16 +378,37 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
           if (execResult.success && execResult.result?.found === false && execResult.result.message) {
             // Wikipedia Auto-Cascade to Tavily Web Search if not found
             if (activeToolName === 'search_wikipedia' && toolRegistry.hasTool('search_web')) {
-              onStatus?.({ status: 'tool_cascade', from: 'search_wikipedia', to: 'search_web' });
-              const cascadeResult = await toolRegistry.executeTool('search_web', { query: message });
+              onStatus?.({
+                status: 'tool_cascade',
+                from: 'search_wikipedia',
+                to: 'search_web',
+                queryPreview: clip(effectiveMessage, 60)
+              });
+              const cascadeLabel = getToolLabel('search_web');
+              const cascadeResult = await toolRegistry.executeTool('search_web', { query: effectiveMessage });
+              toolsUsed.push(cascadeResult);
+              onStatus?.({
+                status: 'tool_done',
+                tool: 'search_web',
+                label: cascadeLabel,
+                providerLabel: cascadeResult.result?.providerLabel || null,
+                found: Boolean(cascadeResult.success && cascadeResult.result?.found !== false),
+                durationMs: cascadeResult.durationMs || 0
+              });
+              if (cascadeResult.success && cascadeResult.result?.notice) {
+                onStatus?.({
+                  status: 'notice',
+                  code: cascadeResult.result.notice.code,
+                  message: cascadeResult.result.notice.message
+                });
+              }
               if (cascadeResult.success && cascadeResult.result?.found) {
                 execResult = cascadeResult;
                 activeToolName = 'search_web';
-                toolsUsed.push(execResult);
                 cleanContext = formatCleanContext(activeToolName, execResult.result);
                 referenceText = execResult.result?.summary || '';
               } else {
-                return replyWithoutModel(execResult.result.message);
+                return replyWithoutModel(cascadeResult.result?.message || execResult.result.message);
               }
             } else {
               return replyWithoutModel(execResult.result.message);
@@ -339,6 +437,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       cleanContext = cleanContext ? `${cleanContext}\n\n${safetyHint}` : safetyHint;
     }
 
+    const safeStream = createSafeTokenStream(onToken);
+
     const synthesized = await synthesizeAnswer({
       model,
       chatFn,
@@ -346,7 +446,8 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       message: effectiveMessage,
       cleanContext,
       personaPrompt,
-      onToken
+      onToken: safeStream.handler,
+      onStatus
     });
 
     const raw = typeof synthesized === 'string' ? synthesized : (synthesized?.text || '');
@@ -370,9 +471,13 @@ export async function runAgent({ message, conversationHistory = [], sessionId = 
       dominantLanguage: dominantLang,
       chatFn,
       model,
+      onStatus,
       forceRefinement: Boolean(options?.selfReflect === 'always')
     });
     const finalText = reflectionResult.finalText;
+    if (onToken && !safeStream.hasEmitted() && finalText) {
+      onToken(finalText);
+    }
     const defaultFeeling = toolsUsed.some((t) => t.success) ? 'happy' : 'neutral';
 
     const topicEntity = toolsUsed[0]?.params?.topic ||

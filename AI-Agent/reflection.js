@@ -52,6 +52,32 @@ export function inspectDraftQuality({
     critiquePoints.push('มีวงเล็บเปิดค้างไว้แต่ไม่ได้ปิดประโยคให้สมบูรณ์');
   }
 
+  // 6. Ungrounded 4-Digit Year Fabrication Guard (BE / AD tolerant: +-543)
+  if (referenceText && referenceText.trim().length > 0) {
+    const yearRegex = /\b(1[89]\d{2}|20\d{2}|2[345]\d{2}|26[0-4]\d)\b/g;
+    const allowedSource = `${referenceText} ${userQuery}`;
+    const allowedYears = new Set();
+    let refMatch;
+    while ((refMatch = yearRegex.exec(allowedSource)) !== null) {
+      allowedYears.add(Number(refMatch[1]));
+    }
+
+    const ungroundedYears = [];
+    let draftMatch;
+    while ((draftMatch = yearRegex.exec(text)) !== null) {
+      const yr = Number(draftMatch[1]);
+      const isGrounded = allowedYears.has(yr) || allowedYears.has(yr - 543) || allowedYears.has(yr + 543);
+      if (!isGrounded && !ungroundedYears.includes(yr)) {
+        ungroundedYears.push(yr);
+      }
+    }
+
+    if (ungroundedYears.length > 0) {
+      defects.push('ungrounded_year_hallucination');
+      critiquePoints.push(`พบการระบุปี (${ungroundedYears.join(', ')}) ที่ไม่มีปรากฏในข้อมูลอ้างอิง ห้ามแต่งหรือเดาปี พ.ศ./ค.ศ. ที่ไม่มีในข้อมูลอ้างอิงเด็ดขาด`);
+    }
+  }
+
   const needsRefinement = defects.length > 0;
   const critique = critiquePoints.join('\n');
 
@@ -70,6 +96,7 @@ export async function selfReflectAndRefine({
   chatFn = undefined,
   model = 'qwen2.5:1.5b',
   onToken = undefined,
+  onStatus = undefined,
   forceRefinement = false
 } = {}) {
   const quality = inspectDraftQuality({ draft, userQuery, referenceText, dominantLanguage });
@@ -99,6 +126,11 @@ export async function selfReflectAndRefine({
   }
 
   try {
+    onStatus?.({
+      status: 'reflecting',
+      defectsCount: quality.defects.length,
+      defects: quality.defects
+    });
     const directives = buildLanguageDirectives({ dominantLanguage });
     const systemPrompt = [
       'คุณคือระบบทบทวนและขัดเกลาคำตอบ (Answer Verification & Refinement Engine) ทำงานบน Raspberry Pi 5',
@@ -126,8 +158,8 @@ export async function selfReflectAndRefine({
       temperature: 0.15,
       numPredict: 768,
       chatFn,
-      timeoutMs: 40000,
-      stallTimeoutMs: 15000,
+      timeoutMs: 240000,
+      stallTimeoutMs: 180000,
       returnDetails: true,
       onToken
     });

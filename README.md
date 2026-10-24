@@ -10,18 +10,18 @@
 
 | คุณสมบัติ | การทำงาน | กลไกเชิงวิศวกรรม (Engineering Mechanism) |
 | :--- | :--- | :--- |
-| **Dynamic Model Switching** | สลับโหมด AI ได้ทันทีระหว่าง Lite (1.5B) และ Advanced (3B) | **Sequential Unload**: ปลดโมเดลเดิมออกจาก RAM (`keep_alive: 0`) และตรวจสอบสถานะหน่วยความจำผ่าน `client.ps()` จน RAM คืนกลับมาก่อนจึงโหลดโมเดลใหม่ ป้องกัน Linux OOM Crash |
-| **Tool Modes (โหมดเครื่องมือ)** | เลือกรูปแบบการทำงานได้ 3 โหมดตามลักษณะงาน: ออโต้, คุยล้วน, ค้นเว็บ | **Tool Mode Policy Engine**: ควบคุมการเปิด/ปิดเครื่องมือภายนอกในระดับฟังก์ชัน จำค่าผ่าน `localStorage` เหมือน Gemini |
-| **Dual Web Search & Auto-Cascade** | ค้นหาข้อมูลเว็บเปิดสดใหม่เป็นทางเลือกหลัก พร้อมรับมือกรณีไม่พบบทความ | **Tavily Primary with DuckDuckGo Fallback & Wiki Cascade**: ใช้งาน Tavily AI Search เมื่อมี API Key หรือ DuckDuckGo Lite แบบ Zero-Key และหาก Wikipedia ค้นหาไม่พบจะสลับสู่การค้นหาเว็บอัตโนมัติ |
-| **30-Turn Verbatim Episodic Memory** | จดจำคำถามและประวัติการสนทนาย้อนหลังได้ถึง 30 รอบแบบแม่นยำรายข้อ | **Ordinal Question Recall & Sliding Context Ledger**: บันทึกคำถามแบบ Verbatim ใน RAM ตอบคำถามจำพวก "คำถามแรก", "คำถามที่ 3", หรือเรียกดูรายการย้อนหลังได้ 100% พร้อมขีดจำกัดบริบท 3,200 ตัวอักษร |
+| **Dynamic Model Switching & Mutex** | สลับโหมด AI อย่างปลอดภัยระหว่าง Lite (1.5B) และ Advanced (3B) พร้อมระบบล็อกกันสลับขณะกำลังตอบ | **Sequential Unload + Busy Mutex (`409`)**: ปลดโมเดลเดิมออกจาก RAM (`keep_alive: 0`) และบล็อกการสลับกลางคันทั้งฝั่ง UI และ Server (`MODEL_BUSY_GENERATING`) พร้อม `createSafeTokenStream` กัน JSON ดิบหลุดขึ้นจอ |
+| **Linux FIFO Runqueue v2** | ระบบคิวอิงวิชา OS Linux แสดงลำดับคิวและอุปกรณ์ที่กำลังใช้งานกลางหน้าจอแบบ Real-time | **`SCHED_FIFO` + PCB (`job_struct`)**: กำหนด PID, สถานะ `TASK_RUNNING` / `TASK_WAITING`, แจ้งลำดับคิวสดผ่าน SSE `event: queue` และถอนคิวอัตโนมัติทันทีเมื่อปิดแท็บหรือยกเลิก |
+| **Tool Modes & Tavily Live Diagnostics** | โหมดเครื่องมือ 3 รูปแบบ พร้อมระบบวินิจฉัยปัญหา API Key ฝั่งเซิร์ฟเวอร์แบบละเอียดและโหลด `.env` อัตโนมัติ | **Hot-Reload `.env` + Live Probe**: ตรวจเช็ก `mtimeMs` ของไฟล์ `.env` โดยไม่ต้องรีสตาร์ต แยกสาเหตุ Error ครบทุกกรณี (`401`, `429/432`, Timeout, DNS) และมีปุ่มกดทดสอบสายตรงบน UI |
+| **Dual Web Search & Closed-Book RAG** | ค้นหาข้อมูลเว็บเปิดสดใหม่และล็อกการอ้างอิงป้องกันอาการหลอนของโมเดลขนาดเล็ก | **Expanded Intent Router + Year Guard**: คัดกรองคำถามข้อมูลสดและข้อเท็จจริงเข้าเครื่องมือแม่นยำ แยก `GROUNDED_RAG_PROMPT` ห้ามแต่งตัวเลข/ปี พ.ศ. เอง พร้อมตรวจจับปีปลอมใน `reflection.js` |
+| **Gemini-Style Live Thinking UI** | แสดงขั้นตอนการวิเคราะห์และเครื่องมือที่กำลังเรียกใช้แบบสดพร้อมนาฬิกาจับเวลาและพับเก็บได้ | **Full Lifecycle SSE Status**: ส่งสัญญาณครบทุกเฟส (`analyzing` -> `using_tool` -> `tool_done` -> `synthesizing` -> `reflecting`) ยุบเก็บเป็นปุ่มดูขั้นตอนย้อนหลังอัตโนมัติเมื่อเริ่มตอบ |
+| **30-Turn Verbatim Episodic Memory** | จดจำคำถามและประวัติการสนทนาย้อนหลังได้ถึง 30 รอบ พร้อมหลอดสีเขียวแสดงผลแบบ Real-time | **Ordinal Question Recall & Live Meter**: บันทึกคำถามแบบ Verbatim ใน RAM ตอบคำถามย้อนหลังได้ 100% พร้อมขยับแถบสถานะสีเขียว/เหลือง/แดงทันทีตั้งแต่วินาทีที่ส่งคำถาม |
 | **Universal Multilingual Guard** | ป้องกันการปนเปื้อนของภาษาต่างประเทศ (เช่น อักษรจีน CJK) ในคำตอบไทยและอังกฤษ | **Logit Tuning & Post-Generation Sanitizer**: ปรับจูน `repeat_penalty: 1.10`, `top_p: 0.85` พร้อม Stop Tokens ของ Qwen และฟังก์ชัน `cleanCJKLeakage` ลบเศษตัวอักษรหลุดรอด |
-| **Two-Pass Self-Reflection** | กลั่นกรองคุณภาพและความถูกต้องของเนื้อหาก่อนส่งมอบให้ผู้ใช้ | **Lightweight Inspection & Conditional Refinement**: ตรวจจับการวนซ้ำ, ข้อความไม่สมบูรณ์, หรือเนื้อหาขัดแย้ง และปรับแก้เฉพาะจุดโดยไม่เพิ่มภาระการเรียกโมเดลโดยไม่จำเป็น |
-| **Linux Kernel Telemetry & Governor** | เฝ้าระวังทรัพยากรฮาร์ดแวร์ Raspberry Pi 5 ในระดับเคอร์เนลอย่างแม่นยำ | **Kernel Metrics & Pressure Shedding**: อ่าน `/proc/meminfo` (MemAvailable), คำนวณ ZRAM Compression Ratio, SoC Thermal, CPU tick delta %, และมี Active Governor ป้องกันเครื่องค้างหรือ OOM |
-| **Persistent Telemetry UI (5 Cards)** | แสดงสถิติ Token และข้อมูลฮาร์ดแวร์เคอร์เนลแบบคงทนแม้รีเฟรชหน้าเว็บ | **Hydrated Tab State & Live Indicators**: จำค่าผ่าน `localStorage` ซิงก์ข้อมูลกับเซสชันเบื้องหลัง แสดงการ์ดสถานะเคอร์เนลใบที่ 5 และระบุผู้ให้บริการค้นหาเว็บในแถบ Badge |
-| **Anti-Copy-Paste Continuity** | ป้องกันการคัดลอกคำตอบเดิมเมื่อผู้ใช้ถามคำถามเจาะจงต่อเนื่อง | **Modifier-Aware Note Ledger**: แยกแยะคำถามย่อยที่มีคำขยาย (เช่น "แล้วขนาดล่ะ", "มีสีอะไร") ไม่ให้ดึงคำตอบเดิมจาก Note Memory และข้ามแคชบทความวิกิพีเดียเมื่ออยู่ใน Search Mode |
-| **9 Deterministic Tools** | เครื่องมือดึงข้อมูลสดและคำนวณที่แม่นยำ 100% | **Deterministic Tool Registry**: ระบบคัดกรองเจตนา 100% (Intent Router) ตัดสินใจเรียก Tool โดยไม่เสีย Token ในรอบวางแผน พร้อม Circuit Breaker ป้องกันการค้าง |
-| **Anti-Truncation Thai Formatting** | ป้องกันข้อความขาดช่วงกลางคันและรักษารูปแบบประโยคภาษาไทย | **Extractive Grounding & Sentence Guard**: ไม่ตัดคำย่อ (พ.ศ., ค.ศ.), ตรวจจับคำลงท้ายประโยคธรรมชาติ (ครับ/ค่ะ), และรักษาการเว้นวรรคขึ้นบรรทัดใหม่ |
-| **Edge Hardware Protection** | เสถียรภาพสูงสุดบน Raspberry Pi 5 แรม 4GB | **FIFO RequestQueue**: จัดคิวประมวลผลทีละ 1 คำขอ (คิวสูงสุด 10) ป้องกันแรมล้น และไม่เขียนดิสก์ (0 MicroSD Writes) |
+| **Two-Pass Self-Reflection** | กลั่นกรองคุณภาพและความถูกต้องของเนื้อหาก่อนส่งมอบให้ผู้ใช้ | **Lightweight Inspection & Year/Polarity Guard**: ตรวจจับการวนซ้ำ, ข้อความไม่สมบูรณ์, เนื้อหาขัดแย้ง, หรือการมั่วปี พ.ศ./ค.ศ. และปรับแก้เฉพาะจุดเมื่อจำเป็น |
+| **Linux Kernel Telemetry & Live Polling** | เฝ้าระวังทรัพยากรฮาร์ดแวร์ Raspberry Pi 5 แบบสดต่อเนื่องทุก 2 วินาทีขณะประมวลผล | **Rolling Kernel Tick Sampler & Active Governor**: อ่าน `/proc/meminfo`, ZRAM Ratio, SoC Thermal, Rolling CPU% (`timer.unref()`) และมี Active Governor ป้องกัน OOM |
+| **Persistent Telemetry UI (6 Cards)** | แสดงสถิติ Token, ความจำ, เคอร์เนล OS และสถานะ Tavily API แบบคงทนแม้รีเฟรชหน้าเว็บ | **Hydrated Tab State & Live Indicators**: จำค่าผ่าน `localStorage` ซิงก์กับเซสชันเบื้องหลัง อัปเดตสดระหว่างคิด และตรวจเช็กสถานะคีย์ค้นหาเว็บได้ทันที |
+| **Pi 5 Endurance Timeouts** | ป้องกันการตัด Timeout กลางอากาศเมื่อโมเดล 3B ใช้เวลาคิดนานบน CPU ของ Raspberry Pi 5 | **Watchdog Heartbeat Architecture**: ขยาย Stall Timeout เป็น 5 นาที (เพดานรวม 10 นาที), ส่ง SSE `: ping` ทุก 10 วินาทีกัน Cloudflare Tunnel ตัดสาย และรีเซ็ต Client Watchdog อัตโนมัติ |
+| **9 Deterministic Tools** | เครื่องมือดึงข้อมูลสดและคำนวณที่แม่นยำ 100% ปราศจากการเขียนดิสก์ | **Deterministic Tool Registry**: ระบบคัดกรองเจตนา 100% (Intent Router) ตัดสินใจเรียก Tool โดยไม่เสีย Token ในรอบวางแผน และไม่เขียน MicroSD Card (`0 Disk Writes`) |
 
 ---
 
@@ -247,7 +247,7 @@ Local-AI-Agent/
 │   └── ReadMe.md                       # คู่มือการทำงานของ Frontend
 ├── .agents/                            # Local AI Agent Developer Skills
 │   └── skills/                         # codebase-design, small-llm-agent-logic, tdd, to-tickets, etc.
-├── tests/                              # ชุดทดสอบระบบอัตโนมัติ (309 tests, 75 suites ผ่าน 100%)
+├── tests/                              # ชุดทดสอบระบบอัตโนมัติ (325 tests, 75 suites ผ่าน 100%)
 │   ├── *.test.js                       # ชุดทดสอบ Unit & Integration ครบทุกโมดูล
 │   └── eval/                           # สคริปต์รัน Benchmark วัดความแม่นยำและประสิทธิภาพ
 ├── package.json                        # Node.js Project Manifest (Pure ES Modules)
@@ -263,7 +263,7 @@ Local-AI-Agent/
 
 | ตัวชี้วัดการประเมิน | เกณฑ์เป้าหมาย | ผลลัพธ์ที่วัดได้จริง | สถานะ |
 | :--- | :--- | :--- | :--- |
-| **Unit & Integration Tests** | ผ่าน 100% | **303 ผ่าน / 6 ข้ามตามฮาร์ดแวร์จริง / 0 ล้มเหลว** (309 tests, 75 suites) | ผ่าน |
+| **Unit & Integration Tests** | ผ่าน 100% | **319 ผ่าน / 6 ข้ามตามฮาร์ดแวร์จริง / 0 ล้มเหลว** (325 tests, 75 suites) | ผ่าน |
 | **Router Intent Accuracy** | >= 95.0% | **86 / 86 (100.0%)** ครอบคลุม 23 หมวดหมู่ | ผ่าน |
 | **Multi-Turn Recall Rate (30 รอบ)** | >= 90.0% | **27 / 27 (100.0%)** จดจำคำถามแรก ย้อนหลัง #1..#30 และบริบทต่อเนื่องสมบูรณ์ | ผ่าน |
 | **Tool Mode Policy Accuracy** | 100.0% | **16 / 16 (100.0%)** ควบคุมการปิด/เปิดเครื่องมือถูกต้องทุกโหมด | ผ่าน |
@@ -282,8 +282,10 @@ Local-AI-Agent/
 | `POST` | `/api/chat` | ส่งคำถามและรับคำตอบ JSON แบบซิงโครนัสรอบเดียว |
 | `POST` | `/api/chat/stream` | รับคำตอบแบบ Server-Sent Events (SSE) ทีละ Token พร้อมอัปเดตสถานะและข้อมูล Telemetry |
 | `GET` | `/api/model/status` | ตรวจสอบโหมดโมเดลปัจจุบัน (`lite`/`advanced`), สถานะแรม, และชื่อโมเดลที่อยู่ใน RAM |
-| `POST` | `/api/model/switch` | สลับโหมดโมเดล AI อย่างปลอดภัย (`{ "mode": "lite" \| "advanced" }`) |
+| `POST` | `/api/model/switch` | สลับโหมดโมเดล AI อย่างปลอดภัย (`{ "mode": "lite" \| "advanced", "rejectIfBusy": true }`) คืน `409` หากกำลังประมวลผล |
+| `GET` | `/api/queue/status` | ตรวจสอบสถานะคิว Linux FIFO Runqueue v2 (`SCHED_FIFO`, PID, `TASK_RUNNING`, ลำดับคิวรอ `TASK_WAITING`) |
 | `GET` | `/api/tools/status` | ตรวจสอบโหมดเครื่องมือที่รองรับ และสถานะการกำหนดค่าของ Tavily API Key |
+| `GET` | `/api/tools/diagnostics` | วินิจฉัยสถานะ Tavily API Key เชิงลึกบน Server (รองรับ `?probe=1` เพื่อทดสอบยิงจริงแบบปลอดภัยโดยซ่อน Key) |
 | `GET` | `/api/os/metrics` | รายงานสถานะเคอร์เนล Linux (/proc/meminfo, ZRAM Ratio, SoC Temp, CPU AI/OS, Process RSS, Governor State) |
 | `GET` | `/api/chat/session/:id` | ดึงประวัติการสนทนา, Focus Entity, และสรุปสถิติ Token ของเซสชันนั้นๆ |
 | `DELETE`| `/api/chat/session/:id` | ล้างประวัติการสนทนาและคืนหน่วยความจำของเซสชันทันที (เรียกใช้เมื่อกดแชตใหม่) |

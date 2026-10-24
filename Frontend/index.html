@@ -97,6 +97,12 @@
           <button type="button" class="notice-close" id="notice-close" aria-label="ปิดการแจ้งเตือน">&times;</button>
         </div>
 
+        <div class="queue-minimized-pill hidden" id="queue-minimized-pill" role="status" aria-live="polite">
+          <span class="queue-pill-dot" aria-hidden="true"></span>
+          <span class="queue-pill-text" id="queue-minimized-text">กำลังรอคิวลำดับที่ #1</span>
+          <button type="button" class="queue-pill-expand" id="queue-expand-btn">ดูสถานะคิว</button>
+        </div>
+
         <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>
 
       </section>
@@ -132,7 +138,7 @@
               <span class="card-value" id="memory-turns-text">0 / 30 รอบ</span>
             </div>
             <div class="meter-track">
-              <div class="meter-fill" id="memory-meter-fill" style="width: 0%"></div>
+              <div class="meter-fill meter-normal" id="memory-meter-fill" style="width: 0%"></div>
             </div>
             <div class="card-sub-info">
               <div>ความยาวบริบท: <strong id="memory-chars-text">0 / 3,200 ตัวอักษร</strong></div>
@@ -188,7 +194,7 @@
 
           <div class="telemetry-card os-card">
             <div class="card-header">
-              <span class="card-label">สถานะระบบปฏิบัติการ (OS & Kernel)</span>
+              <span class="card-label">สถานะระบบปฏิบัติการ (OS &amp; Kernel)</span>
               <span class="os-gov-tag tag-healthy" id="os-governor-tag">ปกติ</span>
             </div>
             <div class="stats-list">
@@ -215,9 +221,77 @@
             </div>
           </div>
 
+          <div class="telemetry-card tavily-diag-card" id="tavily-diag-card">
+            <div class="card-header">
+              <span class="card-label">สถานะค้นเว็บ &amp; Tavily API</span>
+              <span class="os-gov-tag tag-healthy" id="tavily-status-tag">รอตรวจสอบ</span>
+            </div>
+            <div class="stats-list">
+              <div class="stat-row">
+                <span>สถานะเซิร์ฟเวอร์:</span>
+                <strong id="tavily-status-title">-</strong>
+              </div>
+              <div class="stat-row">
+                <span>แหล่งที่มา Key:</span>
+                <strong id="tavily-key-source">-</strong>
+              </div>
+              <div class="stat-row">
+                <span>รหัส Key (ซ่อนค่า):</span>
+                <strong id="tavily-masked-key">-</strong>
+              </div>
+            </div>
+            <p class="tavily-advice-text" id="tavily-advice-text">กดปุ่มด้านล่างเพื่อทดสอบการเชื่อมต่อ Tavily API จากฝั่งเซิร์ฟเวอร์โดยตรง</p>
+            <button type="button" class="tavily-probe-btn" id="tavily-probe-btn">
+              ทดสอบ Tavily API
+            </button>
+          </div>
+
         </div>
       </aside>
 
+    </div>
+
+    <div class="queue-modal-backdrop hidden" id="queue-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="queue-modal-title">
+      <div class="queue-modal-card">
+        <div class="queue-modal-header">
+          <div class="queue-header-left">
+            <span class="queue-policy-badge">SCHED_FIFO</span>
+            <h3 class="queue-modal-title" id="queue-modal-title">คิวประมวลผล AI (Linux Runqueue)</h3>
+          </div>
+          <button type="button" class="queue-minimize-btn" id="queue-minimize-btn" title="ย่อหน้าต่างคิวเพื่อย้อนอ่านแชต">
+            ย่อเก็บ
+          </button>
+        </div>
+
+        <div class="queue-hero-box">
+          <span class="queue-hero-caption">ลำดับคิวของคุณในขณะนี้</span>
+          <div class="queue-hero-position" id="queue-your-position">คิวที่ #1</div>
+          <div class="queue-hero-meta">
+            <span id="queue-est-wait">เวลารอโดยประมาณ ~18 วินาที</span>
+            <span class="queue-meta-sep">|</span>
+            <span>รอแล้ว <strong id="queue-elapsed-timer">00:00</strong></span>
+          </div>
+        </div>
+
+        <div class="queue-section">
+          <div class="queue-section-label">กำลังประมวลผลบน CPU ตอนนี้ (TASK_RUNNING)</div>
+          <div class="queue-running-box" id="queue-running-box">
+            <span class="queue-state-dot running" aria-hidden="true"></span>
+            <span class="queue-running-text" id="queue-running-text">กำลังตรวจสอบสถานะโพรเซส...</span>
+          </div>
+        </div>
+
+        <div class="queue-section">
+          <div class="queue-section-label">ลำดับคิวที่กำลังรอตามลำดับ (FIFO Ready Queue)</div>
+          <ul class="queue-waiting-list" id="queue-waiting-list"></ul>
+        </div>
+
+        <div class="queue-modal-footer">
+          <button type="button" class="queue-cancel-btn" id="queue-cancel-btn">
+            ยกเลิกคำขอนี้
+          </button>
+        </div>
+      </div>
     </div>
 
   </main>
