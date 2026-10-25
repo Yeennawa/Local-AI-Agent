@@ -34,37 +34,285 @@
       </button>
     </form>
 
-    <section class="ai-panel" aria-live="polite">
+    <div class="workspace-layout" id="workspace-layout">
 
-      <div class="ai-profile">
+      <section class="ai-panel" aria-live="polite">
 
-        <div class="ai-character neutral" id="ai-character" aria-hidden="true">
-          <div class="character-antenna"></div>
+        <div class="ai-profile">
 
-          <div class="character-face">
-            <span class="character-eye"></span>
-            <span class="character-eye"></span>
+          <div class="ai-character neutral state-idle" id="ai-character" aria-hidden="true">
+            <div class="character-antenna"></div>
+
+            <div class="character-face">
+              <span class="character-eye"></span>
+              <span class="character-eye"></span>
+              <span class="character-mouth"></span>
+            </div>
+          </div>
+
+          <div class="ai-information">
+            <h2>Local AI</h2>
+            <p>พร้อมช่วยตอบคำถาม</p>
+          </div>
+
+          <div class="controls-cluster">
+            <div class="model-switcher" id="model-switcher" role="group" aria-label="เลือกโหมดโมเดล AI">
+              <button type="button" class="mode-button active" data-mode="lite" id="mode-lite-btn" title="โหมดประหยัด RAM (1.5B)">
+                Lite (1.5B)
+              </button>
+              <button type="button" class="mode-button" data-mode="advanced" id="mode-advanced-btn" title="โหมดประสิทธิภาพสูง (3B)">
+                Adv (3B)
+              </button>
+            </div>
+
+            <div class="tool-mode-switcher" id="tool-mode-switcher" role="group" aria-label="เลือกโหมดเครื่องมือและการค้นหา">
+              <button type="button" class="tool-mode-button active" data-tool-mode="auto" id="tool-mode-auto-btn" title="โหมดอัตโนมัติ (Adaptive RAG เลือกให้ตามความเหมาะสม)">
+                ออโต้
+              </button>
+              <button type="button" class="tool-mode-button" data-tool-mode="chat" id="tool-mode-chat-btn" title="โหมดคุยอย่างเดียว (ไม่ค้นหาภายนอก เร็วที่สุด)">
+                คุยล้วน
+              </button>
+              <button type="button" class="tool-mode-button" data-tool-mode="search" id="tool-mode-search-btn" title="โหมดค้นหาเชิงลึก (ดึงข้อมูลล่าสุดจาก Tavily/DuckDuckGo)">
+                ค้นเว็บ
+              </button>
+              <button type="button" class="tool-mode-button" data-tool-mode="linux" id="tool-mode-linux-btn" title="โหมดผู้ช่วย Linux (ช่วยเขียนและตรวจสอบคำสั่ง OS พร้อมรันบน Pi)">
+                Linux
+              </button>
+            </div>
+          </div>
+
+          <div class="header-actions">
+            <button type="button" class="new-chat-button" id="new-chat-button">
+              แชตใหม่
+            </button>
+
+            <button type="button" class="telemetry-toggle-button" id="telemetry-toggle-button" title="เปิด/ปิด แผงสถิติ Token & บริบท">
+              สถิติ Token
+            </button>
+
+            <span class="status-badge" id="model-status-badge">
+              Lite Ready
+            </span>
+          </div>
+
+        </div>
+
+        <div class="tool-notice-banner hidden" id="tool-notice-banner" role="status" aria-live="polite">
+          <span class="notice-icon" aria-hidden="true">i</span>
+          <span class="notice-text" id="notice-text"></span>
+          <button type="button" class="notice-close" id="notice-close" aria-label="ปิดการแจ้งเตือน">&times;</button>
+        </div>
+
+        <div class="queue-minimized-pill hidden" id="queue-minimized-pill" role="status" aria-live="polite">
+          <span class="queue-pill-dot" aria-hidden="true"></span>
+          <span class="queue-pill-text" id="queue-minimized-text">กำลังรอคิวลำดับที่ #1</span>
+          <button type="button" class="queue-pill-expand" id="queue-expand-btn">ดูสถานะคิว</button>
+        </div>
+
+        <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>
+
+      </section>
+
+      <aside class="telemetry-drawer hidden" id="telemetry-drawer" aria-label="แผงสถิติการใช้งาน Token">
+        <div class="drawer-header">
+          <div class="drawer-title-group">
+            <span class="drawer-title">สถิติ Token & บริบท</span>
+            <span class="drawer-model-pill" id="drawer-model-pill">Qwen2.5 1.5B</span>
+          </div>
+          <button type="button" class="drawer-close-btn" id="drawer-close-btn" aria-label="ปิดแผงสถิติ">&times;</button>
+        </div>
+
+        <div class="drawer-content">
+
+          <!-- Section 1: รอบล่าสุด (Current Turn) -->
+          <div class="drawer-section">
+            <div class="drawer-section-header">
+              <span class="drawer-section-title">การตอบรอบนี้</span>
+              <span class="turn-type-badge" id="turn-type-badge">พร้อมใช้งาน</span>
+            </div>
+
+            <div class="telemetry-card">
+              <div class="card-header">
+                <span class="card-label">Context Window</span>
+                <span class="card-percent" id="context-percent-text">0.0%</span>
+              </div>
+              <div class="meter-track">
+                <div class="meter-fill meter-normal" id="context-meter-fill" style="width: 0%"></div>
+              </div>
+              <div class="card-footer">
+                <span id="context-tokens-text">0 / 4,096 tokens</span>
+                <span class="meter-status-tag tag-healthy" id="context-status-tag">ปกติ</span>
+              </div>
+            </div>
+
+            <div class="stats-grid">
+              <div class="stat-item">
+                <span class="stat-caption">Input (Prompt)</span>
+                <span class="stat-number" id="stat-prompt-tokens">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-caption">Output (Completion)</span>
+                <span class="stat-number" id="stat-completion-tokens">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-caption">รวมรอบนี้</span>
+                <span class="stat-number" id="stat-turn-total">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-caption">ความเร็ว</span>
+                <span class="stat-number" id="stat-tokens-speed">0 t/s</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 2: เซสชันและการสนทนา (Session Ledger) -->
+          <div class="drawer-section">
+            <div class="drawer-section-header">
+              <span class="drawer-section-title">เซสชันและคลังความจำ</span>
+              <span class="session-reset-hint">รีเซ็ตเมื่อเริ่มแชตใหม่</span>
+            </div>
+
+            <div class="telemetry-card">
+              <div class="card-header">
+                <span class="card-label">Sliding Memory (30 รอบ)</span>
+                <span class="card-value" id="memory-turns-text">0 / 30 รอบ</span>
+              </div>
+              <div class="meter-track">
+                <div class="meter-fill meter-normal" id="memory-meter-fill" style="width: 0%"></div>
+              </div>
+              <div class="card-sub-info">
+                <div>ความยาวบริบท: <strong id="memory-chars-text">0 / 3,200 ตัวอักษร</strong></div>
+                <div>โฟกัสปัจจุบัน: <strong id="memory-focus-text">ไม่มี</strong></div>
+              </div>
+            </div>
+
+            <div class="stats-list compact">
+              <div class="stat-row">
+                <span>โทเค็นสะสมทั้งหมด:</span>
+                <strong id="session-total-tokens">0</strong>
+              </div>
+              <div class="stat-row">
+                <span>เรียกประมวลผล LLM:</span>
+                <strong id="session-llm-calls">0 ครั้ง</strong>
+              </div>
+              <div class="stat-row">
+                <span>ตอบทันที (0 Token):</span>
+                <strong id="session-deterministic-turns">0 ครั้ง</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 3: ระบบปฏิบัติการ & ฮาร์ดแวร์ Pi 5 (OS Kernel Telemetry) -->
+          <div class="drawer-section">
+            <div class="drawer-section-header">
+              <span class="drawer-section-title">ฮาร์ดแวร์ &amp; Linux Kernel</span>
+              <span class="os-gov-tag tag-healthy" id="os-governor-tag">ปกติ</span>
+            </div>
+
+            <div class="stats-list">
+              <div class="stat-row" title="อ่านตรงจาก /proc/meminfo: MemAvailable">
+                <span>Linux RAM Available:</span>
+                <strong id="os-ram-available">- MB</strong>
+              </div>
+              <div class="stat-row" title="หน่วยความจำ Swap อัดบีบอัดใน RAM ไม่เขียนลง MicroSD">
+                <span>ZRAM Memory Swap:</span>
+                <strong id="os-zram-stat">ปกติ</strong>
+              </div>
+              <div class="stat-row" title="อุณหภูมิเซนเซอร์ชิป SoC จาก /sys/class/thermal">
+                <span>ความร้อนชิป SoC:</span>
+                <strong id="os-soc-temp">- °C</strong>
+              </div>
+              <div class="stat-row" title="คำนวณสดจากผลต่าง Ticks ใน /proc/stat">
+                <span>ภาระงาน CPU:</span>
+                <strong id="os-cpu-load">- %</strong>
+              </div>
+              <div class="stat-row" title="Resident Set Size ของโพรเซส Node.js">
+                <span>หน่วยความจำโพรเซส (RSS):</span>
+                <strong id="os-process-rss">- MB</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 4: การเชื่อมต่อค้นเว็บ (Collapsible Details) -->
+          <details class="tavily-diag-details" id="tavily-diag-details">
+            <summary class="tavily-diag-summary">
+              <span>สถานะค้นเว็บ &amp; Tavily API</span>
+              <span class="os-gov-tag tag-healthy" id="tavily-status-tag">รอตรวจสอบ</span>
+            </summary>
+            <div class="stats-list compact">
+              <div class="stat-row">
+                <span>สถานะเซิร์ฟเวอร์:</span>
+                <strong id="tavily-status-title">-</strong>
+              </div>
+              <div class="stat-row">
+                <span>แหล่งที่มา Key:</span>
+                <strong id="tavily-key-source">-</strong>
+              </div>
+              <div class="stat-row">
+                <span>รหัส Key (ซ่อนค่า):</span>
+                <strong id="tavily-masked-key">-</strong>
+              </div>
+            </div>
+            <p class="tavily-advice-text" id="tavily-advice-text">กดปุ่มด้านล่างเพื่อทดสอบการเชื่อมต่อ Tavily API จากฝั่งเซิร์ฟเวอร์โดยตรง</p>
+            <button type="button" class="tavily-probe-btn" id="tavily-probe-btn">
+              ทดสอบ Tavily API
+            </button>
+          </details>
+
+        </div>
+      </aside>
+
+    </div>
+
+    <div class="queue-modal-backdrop hidden" id="queue-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="queue-modal-title">
+      <div class="queue-modal-card">
+        <div class="queue-modal-header">
+          <div class="queue-header-left">
+            <span class="queue-policy-badge">SCHED_FIFO</span>
+            <h3 class="queue-modal-title" id="queue-modal-title">คิวประมวลผล AI (Linux Runqueue)</h3>
+          </div>
+          <button type="button" class="queue-minimize-btn" id="queue-minimize-btn" title="ย่อหน้าต่างคิวเพื่อย้อนอ่านแชต">
+            ย่อเก็บ
+          </button>
+        </div>
+
+        <div class="queue-hero-box">
+          <span class="queue-hero-caption">ลำดับคิวของคุณในขณะนี้</span>
+          <div class="queue-hero-position" id="queue-your-position">คิวที่ #1</div>
+          <div class="queue-hero-meta">
+            <span id="queue-est-wait">เวลารอโดยประมาณ ~18 วินาที</span>
+            <span class="queue-meta-sep">|</span>
+            <span>รอแล้ว <strong id="queue-elapsed-timer">00:00</strong></span>
+          </div>
+          <div class="queue-overrun-note hidden" id="queue-overrun-note">งานก่อนหน้าใช้เวลามากกว่าปกติ ระบบกำลังเร่งประมวลผล</div>
+        </div>
+
+        <div class="queue-section">
+          <div class="queue-section-label">กำลังประมวลผลบน CPU ตอนนี้ (TASK_RUNNING)</div>
+          <div class="queue-running-box" id="queue-running-box">
+            <div class="queue-running-top">
+              <span class="queue-state-dot running" aria-hidden="true"></span>
+              <span class="queue-running-text" id="queue-running-text">กำลังตรวจสอบสถานะโพรเซส...</span>
+            </div>
+            <div class="queue-progress-bar-wrap hidden" id="queue-progress-bar-wrap">
+              <div class="queue-progress-bar-fill" id="queue-progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div class="queue-progress-caption hidden" id="queue-progress-caption"></div>
           </div>
         </div>
 
-        <div class="ai-information">
-          <h2>Local AI</h2>
-          <p>พร้อมช่วยตอบคำถาม</p>
+        <div class="queue-section">
+          <div class="queue-section-label">ลำดับคิวที่กำลังรอตามลำดับ (FIFO Ready Queue)</div>
+          <ul class="queue-waiting-list" id="queue-waiting-list"></ul>
         </div>
 
-        <button type="button" class="new-chat-button" id="new-chat-button">
-          แชตใหม่
-        </button>
-
-        <span class="status-badge">
-          Local
-        </span>
-
+        <div class="queue-modal-footer">
+          <button type="button" class="queue-cancel-btn" id="queue-cancel-btn">
+            ยกเลิกคำขอนี้
+          </button>
+        </div>
       </div>
-
-      <div class="chat-feed" id="chat-feed" role="log" aria-live="polite"></div>
-
-    </section>
+    </div>
 
   </main>
 

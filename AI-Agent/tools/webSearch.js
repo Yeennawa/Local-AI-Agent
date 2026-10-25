@@ -1,14 +1,23 @@
-// Web Search Tool with Zero API Keys, DuckDuckGo HTML/Lite Scraper,
-// Wikipedia Snippet Fallback, In-Memory LRU Caching, and Sentence Clipping.
-// Designed for Raspberry Pi 5 without external npm dependencies.
+// Web Search Tool Facade with Zero-Key Fallback and Provider Prioritization
+// Primary: Tavily (if configured) -> Fallback: DuckDuckGo -> Secondary Fallback: Wikipedia
+// Designed for Raspberry Pi 5 with LRU Caching and 8000ms registry budget.
 
-const MAX_SEARCH_RESULTS = 3;
-const MAX_SUMMARY_CHARS = 550;
-const FETCH_TIMEOUT_MS = 4500;
+import { searchTavily, isTavilyConfigured } from './search/tavily.js';
+import { searchDuckDuckGo, parseDuckDuckGoHtml, decodeHtmlEntities } from './search/duckduckgo.js';
+
+export { parseDuckDuckGoHtml, decodeHtmlEntities };
+
+const MAX_SEARCH_RESULTS = 5;
+const MAX_SUMMARY_CHARS = 2600;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const MAX_CACHE_ENTRIES = 100;
+const WIKI_FALLBACK_TIMEOUT_MS = 2500;
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+export const PROVIDER_LABELS = {
+  tavily: 'Tavily AI',
+  duckduckgo: 'DuckDuckGo',
+  wikipedia: 'Wikipedia Fallback'
+};
 
 const searchCache = new Map();
 
@@ -30,64 +39,16 @@ function setInCache(key, data) {
   searchCache.set(key, { data, timestamp: Date.now() });
 }
 
-export function decodeHtmlEntities(text) {
-  if (typeof text !== 'string') return '';
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .trim();
+export function clearWebSearchCache() {
+  searchCache.clear();
 }
 
-export function parseDuckDuckGoHtml(html) {
-  if (typeof html !== 'string') return [];
-  const results = [];
-
-  // Match result blocks
-  // DuckDuckGo HTML structure typically has:
-  // <a class="result__a" ...>Title</a> ... <a class="result__snippet" ...>Snippet</a>
-  const blockRegex = /<h2[^>]*class=["'][^"']*result__title[^"']*["'][^>]*>([\s\S]*?)<\/h2>[\s\S]*?(?:<a[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/a>|<div[^>]*class=["'][^"']*result__snippet[^"']*["'][^>]*>([\s\S]*?)<\/div>)/gi;
-
-  let match;
-  while ((match = blockRegex.exec(html)) !== null && results.length < MAX_SEARCH_RESULTS) {
-    const rawTitleBlock = match[1] || '';
-    const rawSnippetBlock = match[2] || match[3] || '';
-
-    // Extract title text from inside <a> tag
-    const titleMatch = rawTitleBlock.match(/<a[^>]*>([\s\S]*?)<\/a>/i);
-    const title = decodeHtmlEntities((titleMatch ? titleMatch[1] : rawTitleBlock).replace(/<[^>]+>/g, '')).trim();
-
-    // Extract snippet text
-    const snippet = decodeHtmlEntities(rawSnippetBlock.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
-
-    // Extract outbound url if available
-    const urlMatch = rawTitleBlock.match(/href=["']([^"']+)["']/i);
-    let url = '';
-    if (urlMatch) {
-      const rawUrl = urlMatch[1];
-      const uddgMatch = rawUrl.match(/[?&]uddg=([^&]+)/);
-      url = uddgMatch ? decodeURIComponent(uddgMatch[1]) : rawUrl;
-    }
-
-    if (title && snippet) {
-      results.push({ title, snippet, url });
-    }
-  }
-
-  return results;
-}
-
-async function searchWikipediaFallback(query) {
+async function searchWikipediaFallback(query, timeoutMs = WIKI_FALLBACK_TIMEOUT_MS) {
   try {
     const endpoint = `https://th.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&srprop=snippet&format=json&srlimit=3&utf8=1`;
     const res = await fetch(endpoint, {
       headers: { 'User-Agent': 'LocalAIAgent/1.0 (https://github.com/Yeennawa/Local-AI-Agent)' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      signal: AbortSignal.timeout(timeoutMs)
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -107,6 +68,7 @@ async function searchWikipediaFallback(query) {
 export const webSearchTool = {
   name: 'search_web',
   description: 'Search the web for real-time information, everyday practical questions, how-tos, slang, and cultural queries.',
+  timeoutMs: 18000,
   parameters: {
     type: 'object',
     properties: {
@@ -131,54 +93,108 @@ export const webSearchTool = {
     if (cached) return cached;
 
     let results = [];
+    let provider = null;
+    let notice = null;
+    let directAnswer = null;
+    let tavilyFailureReason = null;
 
-    // 1. DuckDuckGo HTML Lite search
-    try {
-      const ddgUrl = 'https://html.duckduckgo.com/html/';
-      const body = new URLSearchParams({ q: cleanQuery }).toString();
-
-      const res = await fetch(ddgUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': USER_AGENT
-        },
-        body,
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-      });
-
-      if (res.ok) {
-        const html = await res.text();
-        results = parseDuckDuckGoHtml(html);
+    // 1. Primary Provider: Tavily AI Search (if configured with API key)
+    const tavilyConfigured = isTavilyConfigured();
+    if (tavilyConfigured) {
+      const tavilyOutcome = await searchTavily({ query: cleanQuery, maxResults: MAX_SEARCH_RESULTS });
+      if (tavilyOutcome.success && tavilyOutcome.results.length > 0) {
+        results = tavilyOutcome.results;
+        provider = 'tavily';
+        if (tavilyOutcome.answer) {
+          directAnswer = tavilyOutcome.answer;
+        }
+      } else if (!tavilyOutcome.success) {
+        tavilyFailureReason = tavilyOutcome.reason || 'unknown';
+        if (tavilyFailureReason === 'auth_failed_401') {
+          notice = {
+            code: 'tavily_auth_failed',
+            message: 'Tavily API Key ไม่ถูกต้องหรือถูกปฏิเสธ (HTTP 401) ระบบจึงสลับไปใช้ DuckDuckGo แทน'
+          };
+        } else if (tavilyFailureReason === 'quota_exceeded_429') {
+          notice = {
+            code: 'tavily_quota_exceeded',
+            message: 'โควตาการใช้งาน Tavily API เต็มหรือถูกจำกัดความถี่ (HTTP 429/432) ระบบจึงสลับไปใช้ DuckDuckGo แทน'
+          };
+        } else if (tavilyFailureReason === 'timeout' || tavilyFailureReason === 'network_error') {
+          notice = {
+            code: `tavily_${tavilyFailureReason}`,
+            message: `เชื่อมต่อเซิร์ฟเวอร์ Tavily ไม่สำเร็จ (${tavilyFailureReason}) ระบบจึงสลับไปใช้ DuckDuckGo แทน`
+          };
+        }
       }
-    } catch {
-      // Ignore and proceed to fallback
+    } else {
+      // User has not configured Tavily API Key -> inform user via notice that DuckDuckGo is used
+      notice = {
+        code: 'tavily_key_missing',
+        message: 'ไม่พบ Tavily API Key จึงใช้งาน DuckDuckGo แทน'
+      };
     }
 
-    // 2. Fallback to Wikipedia snippet search if DDG failed or was empty
+    // 2. Secondary Provider: DuckDuckGo HTML Lite (if Tavily was unconfigured or failed/empty)
     if (results.length === 0) {
-      results = await searchWikipediaFallback(cleanQuery);
+      const ddgOutcome = await searchDuckDuckGo({ query: cleanQuery, maxResults: MAX_SEARCH_RESULTS });
+      if (ddgOutcome.success && ddgOutcome.results.length > 0) {
+        results = ddgOutcome.results;
+        provider = 'duckduckgo';
+      }
+    }
+
+    // 3. Fallback: Wikipedia snippet search
+    if (results.length === 0) {
+      const wikiResults = await searchWikipediaFallback(cleanQuery);
+      if (wikiResults.length > 0) {
+        results = wikiResults;
+        provider = 'wikipedia';
+      }
     }
 
     if (results.length === 0) {
+      if (tavilyFailureReason && !notice) {
+        notice = {
+          code: `tavily_${tavilyFailureReason}`,
+          message: `ค้นหาผ่าน Tavily ไม่สำเร็จ (${tavilyFailureReason}) และไม่พบข้อมูลจากแหล่งสำรอง`
+        };
+      }
+      const diagSuffix = tavilyFailureReason
+        ? ` (สาเหตุฝั่ง Tavily: ${tavilyFailureReason})`
+        : !tavilyConfigured
+          ? ' (ยังไม่ได้ตั้งค่า Tavily API Key บนเซิร์ฟเวอร์)'
+          : '';
       return {
         found: false,
-        message: `ไม่พบข้อมูลบนเว็บสำหรับ "${cleanQuery}"`
+        message: `ไม่พบข้อมูลบนเว็บสำหรับ "${cleanQuery}"${diagSuffix}`,
+        provider: null,
+        providerLabel: null,
+        notice
       };
     }
 
     // Compose concise summary from top snippets
     const snippetLines = results.map((r, i) => `[แหล่งที่ ${i + 1}: ${r.title}] ${r.snippet}`);
+    if (directAnswer) {
+      snippetLines.unshift(`[คำตอบสังเคราะห์จาก Tavily AI]: ${directAnswer}`);
+    }
     let summary = snippetLines.join('\n');
     if (summary.length > MAX_SUMMARY_CHARS) {
-      summary = `${summary.slice(0, MAX_SUMMARY_CHARS)}...`;
+      const slice = summary.slice(0, MAX_SUMMARY_CHARS);
+      const lastBreak = Math.max(slice.lastIndexOf('\n'), slice.lastIndexOf(' '));
+      summary = lastBreak > MAX_SUMMARY_CHARS * 0.7 ? `${slice.slice(0, lastBreak).trim()}...` : `${slice.trim()}...`;
     }
 
     const payload = {
       found: true,
       query: cleanQuery,
       results,
-      summary
+      summary,
+      provider,
+      providerLabel: PROVIDER_LABELS[provider] || provider || 'Web Search',
+      directAnswer,
+      notice
     };
 
     setInCache(cacheKey, payload);

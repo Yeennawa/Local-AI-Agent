@@ -7,9 +7,29 @@ import { newsTool } from './news.js';
 import { weatherTool } from './weather.js';
 import { fxTool } from './fx.js';
 import { webSearchTool } from './webSearch.js';
+import { linuxTool } from './linuxTool.js';
 
 const DEFAULT_TOOL_TIMEOUT_MS = 5000;
 
+export const TOOL_METADATA = {
+  get_system_info: { label: 'ตรวจสอบสถานะเครื่อง', domain: 'system' },
+  get_current_time: { label: 'ตรวจสอบเวลา', domain: 'time' },
+  calculate: { label: 'คำนวณตัวเลข', domain: 'math' },
+  search_wikipedia: { label: 'ค้นหา Wikipedia', domain: 'knowledge' },
+  search_web: { label: 'ค้นหาเว็บ', domain: 'web' },
+  get_news: { label: 'ดึงข่าวสารล่าสุด', domain: 'news' },
+  get_weather: { label: 'ตรวจสอบสภาพอากาศ', domain: 'weather' },
+  get_fx: { label: 'แปลงอัตราแลกเปลี่ยน', domain: 'finance' },
+  search_github: { label: 'ค้นหา GitHub', domain: 'code' },
+  linux_assistant: { label: 'ผู้ช่วยคำสั่ง Linux', domain: 'linux' }
+};
+export function getToolLabel(name) {
+  return TOOL_METADATA[name]?.label || name;
+}
+
+export function getToolDomain(name) {
+  return TOOL_METADATA[name]?.domain || 'general';
+}
 export class ToolRegistry {
   constructor({ toolTimeoutMs = DEFAULT_TOOL_TIMEOUT_MS } = {}) {
     this.tools = new Map();
@@ -23,6 +43,15 @@ export class ToolRegistry {
     this.registerTool(weatherTool);
     this.registerTool(fxTool);
     this.registerTool(webSearchTool);
+    this.registerTool(linuxTool);
+  }
+
+  getToolLabel(name) {
+    return TOOL_METADATA[name]?.label || name;
+  }
+
+  getToolDomain(name) {
+    return TOOL_METADATA[name]?.domain || 'general';
   }
 
 
@@ -77,7 +106,7 @@ export class ToolRegistry {
   }
 
   // Never throws. The agent loop reads success/error instead of wrapping try/catch.
-  async executeTool(name, params = {}) {
+  async executeTool(name, params = {}, context = {}) {
     const startTime = Date.now();
     const fail = (error, used = params) => ({
       success: false,
@@ -99,19 +128,24 @@ export class ToolRegistry {
       return fail(error.message);
     }
 
+    const effectiveTimeoutMs = typeof tool.timeoutMs === 'number' && tool.timeoutMs > 0
+      ? tool.timeoutMs
+      : this.toolTimeoutMs;
+
     let timer;
     const timeout = new Promise((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`Tool "${name}" timed out after ${this.toolTimeoutMs}ms`)),
-        this.toolTimeoutMs
+        () => reject(new Error(`Tool "${name}" timed out after ${effectiveTimeoutMs}ms`)),
+        effectiveTimeoutMs
       );
     });
 
     try {
-      const result = await Promise.race([tool.execute(clean), timeout]);
+      const result = await Promise.race([tool.execute(clean, context), timeout]);
       return {
         success: true,
         tool: name,
+        label: this.getToolLabel(name),
         params: clean,
         result,
         durationMs: Date.now() - startTime

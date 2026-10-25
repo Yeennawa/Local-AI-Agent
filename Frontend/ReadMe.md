@@ -1,123 +1,142 @@
-# Local AI Agent - Frontend
+# Local AI Agent - Frontend Documentation
 
-Frontend สำหรับหน้าแชตของโปรเจกต์ Local AI Agent
+เอกสารแนะนำสถาปัตยกรรมและการเชื่อมต่อของส่วนติดต่อผู้ใช้ (Frontend Web Client) สำหรับโปรเจกต์ `Local-AI-Agent`
 
-## หน้าที่ของ Frontend
+---
 
-- รับข้อความจากผู้ใช้
-- ส่งข้อความไปยัง Backend ผ่าน API
-- แสดงสถานะกำลังประมวลผล
-- รับคำตอบจาก Backend
-- แสดงคำตอบของ AI
-- แสดงข้อความแจ้งเตือนเมื่อเชื่อมต่อไม่ได้หรือใช้เวลานานเกินไป
+## 1. ภาพรวมและหน้าที่ของ Frontend
 
-> Frontend จะไม่เชื่อมต่อ Ollama โดยตรง โดย Backend จะเป็นตัวกลางระหว่าง Frontend และ Ollama
+Frontend ของระบบทำหน้าที่เป็นส่วนแสดงผลแบบโต้ตอบ (Interactive Web Client) ผ่านเว็บเบราว์เซอร์ โดยเชื่อมต่อกับ Backend ผ่าน HTTP REST API และ Server-Sent Events (SSE) มีหน้าที่หลักดังนี้:
 
-## เทคโนโลยีที่ใช้
+1. **รับและส่งข้อความสนทนา**: รับข้อความคำถามจากผู้ใช้ จัดการประวัติการสนทนา (Sliding Window) และส่งต่อไปยัง Backend
+2. **แสดงผลแบบ Streaming**: รับข้อมูลผลลัพธ์ทีละ Token ผ่าน SSE เพื่อแสดงผลข้อความตอบกลับแบบค่อยๆ พิมพ์ (Typewriter Effect)
+3. **ควบคุมโหมดการทำงาน**:
+   - **Model Switcher**: สลับโหมด AI ระหว่าง `Lite (1.5B)` และ `Adv (3B)`
+   - **Tool Mode Switcher**: ปรับโหมดการทำงานของเครื่องมือระหว่าง `ออโต้` (Auto), `คุยล้วน` (Chat), `ค้นเว็บ` (Search), และ `Linux` (ผู้ช่วยคำสั่งระบบ OS พร้อมปุ่มคัดลอกและรันบนบอร์ด Pi)
+4. **แผงแสดงสถิติ Token & บริบท Real-time (Telemetry Side Drawer)**:
+   - แสดงแถบวัดปริมาณ Token ใน Context Window (เพดาน 4,096 tokens)
+   - แสดงสถานะความจำในเซสชัน (Sliding Memory สูงสุด 30 รอบ)
+   - แสดงความเร็วในการสร้างโทเค็น (tokens/sec) และยอดรวมการใช้งานในแชตปัจจุบัน
+   - รองรับการเปิด/ปิดด้วยปุ่ม `สถิติ Token` เพื่อไม่ให้บดบังการอ่าน
+5. **แอนิเมชัน Avatar State Machine**: ขับเคลื่อนตัวละครอวตาร (`.ai-character`) ผ่าน CSS GPU Compositor บนเบราว์เซอร์ (ไม่กิน CPU ของบอร์ด Pi) รองรับ 6 สถานะ: `idle` (กะพริบตาและหายใจ), `listening` (เอียงหูฟังตอนพิมพ์), `queued` (รอคิว), `thinking` (สัญญาณเสากะพริบ), `tool` (ตาสแกนอ่านข้อมูล), `speaking` (ปากขยับตามโทเค็น) และสีหน้าอารมณ์ (`happy`, `neutral`, `surprised`, `confused`, `proud`) พร้อมรองรับ `prefers-reduced-motion`
+6. **แสดงป้ายกำกับความโปร่งใส (Metadata Badges)**: แสดงชื่อโมเดลและเครื่องมือที่ถูกเรียกใช้งานจริงใต้ข้อความตอบกลับทุกข้อความ
+7. **ระบบแจ้งเตือน Fallback**: แสดงแบนเนอร์แจ้งเตือนเมื่อระบบสลับไปใช้บริการสำรอง (เช่น สลับไป DuckDuckGo เมื่อไม่มี Tavily API Key)
 
-- HTML
-- CSS
-- Vanilla JavaScript
-- Fetch API
+---
 
-## โครงสร้างไฟล์
+## 2. โครงสร้างไฟล์
 
 ```text
-frontend/
-├── index.html
-├── style.css
-├── app.js
-└── README.md
+Frontend/
+├── index.html        # โครงสร้างหน้าเว็บ แผงควบคุม อวตาร และ Telemetry Drawer
+├── style.css         # สไตล์ชีท Cyber-Minimalist และ Responsive Layout สำหรับมือถือ
+├── app.js            # ตรรกะฝั่ง Client จัดการสถานะ, SSE Streaming, และ Real-time Meters
+└── ReadMe.md         # เอกสารฉบับนี้
 ```
 
-## รายละเอียดของแต่ละไฟล์
+---
 
-- `index.html` โครงสร้างหน้าเว็บไซต์
-- `style.css` สี รูปแบบ และการจัดวางหน้าเว็บไซต์
-- `app.js` การรับข้อความ การจัดการสถานะ และการเรียก Backend API
-- `README.md` คู่มือการใช้งานและข้อตกลง API
+## 3. วิธีเปิดใช้งาน Frontend
 
-## วิธีเปิดใช้งาน Frontend
+### รูปแบบที่ 1: รันผ่าน Express Server (แนะนำ - Production & Development)
+เมื่อรันเซิร์ฟเวอร์หลักผ่าน Node.js เซิร์ฟเวอร์จะให้บริการไฟล์ Frontend โดยอัตโนมัติบน Port 3000:
 
-แนะนำให้เปิดผ่าน Live Server ใน Visual Studio Code
-
-1. เปิดโฟลเดอร์โปรเจกต์ด้วย Visual Studio Code
-2. เปิดไฟล์ `index.html`
-3. คลิกขวาภายในไฟล์
-4. เลือก `Open with Live Server`
-
-## การทดสอบโดยไม่มี Backend
-
-เปิดไฟล์ `app.js` และตั้งค่า:
-
-```javascript
-const USE_MOCK_API = true;
+```bash
+npm start
 ```
+เปิดเบราว์เซอร์ไปที่: `http://localhost:3000`
 
-เมื่อเปิด Mock Mode หน้าเว็บจะแสดงคำตอบจำลอง โดยไม่ต้องเปิด Backend หรือ Ollama
+### รูปแบบที่ 2: รันแบบ Standalone ด้วย Mock Mode (ไม่ต้องเปิด Backend)
+หากต้องการทดสอบหรือแก้ไขงานดีไซน์เฉพาะส่วนหน้าเว็บโดยไม่ต้องเปิด Ollama:
+1. เปิดไฟล์ `Frontend/app.js` แล้วตั้งค่า:
+   ```javascript
+   const USE_MOCK_API = true;
+   ```
+2. เปิดไฟล์ `Frontend/index.html` ด้วย Live Server ใน Visual Studio Code หรือเปิดไฟล์บนเบราว์เซอร์โดยตรง
 
-## การเชื่อมต่อ Backend จริง
+---
 
-เมื่อ Backend พร้อมใช้งาน ให้เปิดไฟล์ `app.js` และเปลี่ยนเป็น:
+## 4. ข้อกำหนดการเชื่อมต่อ API (Frontend - Backend Integration Contract)
 
-```javascript
-const USE_MOCK_API = false;
-```
+### 4.1 การส่งข้อความแบบสตรีมมิง (`POST /api/chat/stream`) - โหมดหลัก
 
-Frontend จะเรียก Backend จาก URL:
+Frontend จะเชื่อมต่อผ่าน SSE เพื่อรับข้อความแบบ Real-time:
 
-```javascript
-const API_URL = "http://localhost:3000/api/chat";
-```
-
-## ข้อตกลง API
-
-### Endpoint
-
+#### Request Headers:
 ```http
-POST http://localhost:3000/api/chat
-```
-
-### Request Header
-
-```http
+POST /api/chat/stream
 Content-Type: application/json
 ```
 
-### Request Body
-
-Frontend จะส่งข้อมูลรูปแบบนี้:
-
+#### Request Body:
 ```json
 {
-  "prompt": "ข้อความจากผู้ใช้"
+  "message": "อุณหภูมิกรุงเทพตอนนี้กี่องศา",
+  "sessionId": "sess_1729612345_a1b2c3",
+  "toolMode": "auto",
+  "conversationHistory": [
+    { "role": "user", "content": "สวัสดี" },
+    { "role": "assistant", "content": "สวัสดีครับ มีอะไรให้ช่วยไหมครับ" }
+  ]
 }
 ```
 
-### Successful Response
+#### Server-Sent Events ที่ Frontend ดักฟัง:
+1. `event: status`: ส่งสถานะการทำงานปัจจุบัน
+   - ขณะเรียก Tool: `{ "status": "using_tool", "tool": "get_weather", "label": "กำลังตรวจสอบสภาพอากาศ..." }`
+   - ขณะเริ่มสังเคราะห์: `{ "status": "synthesizing", "estimatedPromptTokens": 280, "maxContextTokens": 4096 }` (นำไปอัปเดตมาตรวัด Token ฝั่ง Client ทันที)
+   - ขณะแจ้งเตือน: `{ "status": "notice", "code": "tavily_key_missing", "message": "ไม่พบ Tavily API Key..." }`
+2. `event: token`: ชิ้นส่วนคำตอบที่ทยอยส่งออกมา
+   - `{ "token": "ขณะนี้" }`
+3. `event: done`: ผลลัพธ์สุดท้ายฉบับสมบูรณ์เมื่อประมวลผลเสร็จสิ้น
+   - ประกอบด้วย `text`, `feeling`, `toolsUsed`, `modelLabel`, และ `usage` (Telemetry ข้อมูลจริงจากเซิร์ฟเวอร์)
+4. `event: error`: ส่งข้อความข้อผิดพลาดเมื่อเกิดปัญหาในระบบ
 
-Backend ต้องส่งคำตอบกลับมาในรูปแบบนี้:
+---
 
+### 4.2 การสลับโหมดโมเดล AI (`POST /api/model/switch`)
+
+เมื่อผู้ใช้คลิกปุ่ม `Lite (1.5B)` หรือ `Adv (3B)`:
+
+#### Request Body:
 ```json
 {
-  "response": "คำตอบจาก AI"
+  "mode": "advanced"
 }
 ```
 
-ชื่อข้อมูล `response` ต้องตรงตามที่กำหนด เพราะ Frontend จะอ่านคำตอบจาก `data.response`
-
-### Error Response
-
-หาก Backend เกิดข้อผิดพลาด สามารถส่งข้อมูลรูปแบบนี้:
-
+#### Response:
 ```json
 {
-  "error": "รายละเอียดข้อผิดพลาด"
+  "success": true,
+  "previousMode": "lite",
+  "currentMode": "advanced",
+  "mode": "advanced",
+  "label": "Advanced Mode (3B)",
+  "model": "qwen2.5:3b",
+  "estimatedRamMB": 2350
 }
 ```
+Frontend จะอัปเดตปุ่มที่ Active, เปลี่ยนป้ายบอกสถานะเป็น `Adv Ready`, แสดงข้อความยืนยันในแชต, และอัปเดตชื่อโมเดลในแผงสถิติ Token
 
-Backend ควรส่ง HTTP Status Code ที่เหมาะสม เช่น:
+---
 
-- `400` ข้อมูลจากผู้ใช้ไม่ถูกต้อง
-- `500` เกิดข้อผิดพลาดภายใน Backend
-- `503` ไม่สามารถเชื่อมต่อ Ollama ได้
+### 4.3 การล้างเซสชันเมื่อเริ่มแชตใหม่ (`DELETE /api/chat/session/:sessionId`)
+
+เมื่อผู้ใช้กดปุ่ม `แชตใหม่`:
+1. Frontend จะยิงคำขอ `DELETE /api/chat/session/:sessionId` ไปยังเซิร์ฟเวอร์เพื่อคืน RAM และลบประวัติการสนทนาเดิม
+2. สร้าง `sessionId` ใหม่ และบันทึกลงใน `localStorage`
+3. ล้างหน้าต่างแชต
+4. เรียกฟังก์ชัน `resetTelemetryUI()` เพื่อปรับมาตรวัด Token, รอบการสนทนา, และยอดสะสมทั้งหมดกลับเป็น 0
+
+---
+
+## 5. การจัดเก็บสถานะบน Client (LocalStorage Keys)
+
+Frontend บันทึกการตั้งค่าของผู้ใช้ไว้ใน `localStorage` เพื่อให้คงอยู่แม้รีเฟรชหน้าเว็บ:
+
+| Key | ค่าที่เป็นไปได้ | หน้าที่ |
+| :--- | :--- | :--- |
+| `ai_agent_session_id` | `sess_<timestamp>_<random>` | รหัสประจำตัวของเซสชันการสนทนาปัจจุบัน |
+| `ai_agent_tool_mode` | `"auto"` \| `"chat"` \| `"search"` | โหมดการทำงานของเครื่องมือที่เลือกไว้ล่าสุด |
+| `ai_agent_telemetry_open`| `"1"` \| `"0"` | สถานะเปิดหรือปิดแผงสถิติ Token & บริบท |

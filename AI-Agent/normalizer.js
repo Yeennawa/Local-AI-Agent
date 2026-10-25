@@ -4,7 +4,7 @@
 
 const LEADING_FRAME_REGEX = /^(?:ใครคือ|ใครเป็น|ใครสร้าง|ใครคิดค้น|ช่วยอธิบาย(?:เรื่อง)?|อธิบาย(?:เรื่อง)?|ช่วย(?:หา|ค้นหา)?(?:ข้อมูล|ประวัติ)?(?:เรื่อง|เกี่ยวกับ|ของ)?|อยาก(?:รู้|ทราบ)(?:ข้อมูล|ประวัติ)?(?:เรื่อง|เกี่ยวกับ|ของ)?|ประวัติ(?:ความ(?:เป็น)?มา)?(?:ของ)?|ความ(?:เป็น)?มาของ|ข้อมูลเกี่ยวกับ|เล่า(?:เรื่อง|ประวัติ)?(?:ของ)?|ขอข้อมูล(?:เรื่อง|เกี่ยวกับ)?|ช่วยบอกหน่อยว่า|บอกหน่อยว่า|รู้ไหมว่า|ทราบไหมว่า|ค้นหา(?:เรื่อง)?|เสิร์ช|search for|what is|who is|tell me about|info about|information about|explain)\s*/i;
 
-const TRAILING_FRAME_REGEX = /\s*(?:คืออะไร(?:นะ|ครับ|ค่ะ)?|คือใคร(?:ใน(?:ปัจจุบัน|ตอนนี้))?(?:นะ|ครับ|ค่ะ)?|เป็นใคร(?:ใน(?:ปัจจุบัน|ตอนนี้))?(?:นะ|ครับ|ค่ะ)?|ชื่ออะไร(?:นะ|ครับ|ค่ะ)?|อยู่ที่ไหน|หมายถึงอะไร|ทำงานอย่างไร|ทำอะไรได้บ้าง|คือสิ่งใด|คนปัจจุบัน|ในปัจจุบัน|ปัจจุบัน|ตอนนี้|มีกี่(?:จังหวัด|เขต|อำเภอ|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)?|ได้เท่าไหร่|เท่าใด|กี่องศา|หน่อย(?:ครับ|ค่ะ|นะ)?|ให้หน่อย(?:ครับ|ค่ะ|นะ)?|ด้วย(?:ครับ|ค่ะ)?|ครับ|ค่ะ|นะ|จ้า|จ๊ะ|\?)+$/i;
+const TRAILING_FRAME_REGEX = /\s*(?:คืออะไร(?:นะ|ครับ|ค่ะ)?|คือใคร(?:ใน(?:ปัจจุบัน|ตอนนี้))?(?:นะ|ครับ|ค่ะ)?|เป็นใคร(?:ใน(?:ปัจจุบัน|ตอนนี้))?(?:นะ|ครับ|ค่ะ)?|ชื่ออะไร(?:นะ|ครับ|ค่ะ)?|อยู่ที่ไหน|ตั้งอยู่ที่ไหน|อยู่จังหวัดอะไร|อยู่ประเทศอะไร|หมายถึงอะไร|ทำงานอย่างไร|ทำอะไรได้บ้าง|คือสิ่งใด|คนปัจจุบัน|ในปัจจุบัน|ปัจจุบัน|ตอนนี้|(?:สูง|ยาว|ลึก|กว้าง|พื้นที่|ห่างกัน)\s*(?:เท่าไหร่|เท่าใด|กี่\s*(?:เมตร|กิโลเมตร|กม\.|ตร\.กม\.|ไมล์|ฟุต)?)|(?:ก่อตั้ง|สร้างขึ้น|เปิดตัว|วางจำหน่าย|เข้าฉาย|เริ่มใช้|ค้นพบ)\s*(?:เมื่อไหร่|เมื่อใด|ปีไหน|ปีอะไร|พ\.ศ\.\s*อะไร|ค\.ศ\.\s*อะไร)|ประชากรกี่(?:คน)?|มีกี่(?:จังหวัด|เขต|อำเภอ|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว|ตอน|ภาค|รุ่น|ชนิด|ประเภท|ดวง|ดาว)?|ได้เท่าไหร่|เท่าใด|กี่องศา|ให้ฟัง(?:หน่อย(?:ครับ|ค่ะ|นะ)?)?|ให้ดู(?:หน่อย(?:ครับ|ค่ะ|นะ)?)?|ให้ทราบ(?:หน่อย(?:ครับ|ค่ะ|นะ)?)?|หน่อย(?:ครับ|ค่ะ|นะ)?|ให้หน่อย(?:ครับ|ค่ะ|นะ)?|ด้วย(?:ครับ|ค่ะ)?|ครับ|ค่ะ|นะ|จ้า|จ๊ะ|\?)+$/i;
 
 const POLITENESS_REGEX = /(?:\s|^)(?:ครับ|ค่ะ|(?<![เแ])จ้า|นะ|หน่อย|ด้วย|จ๊ะ|ขอรับ|รบกวน|ช่วย)(?:\s|$)/g;
 
@@ -168,7 +168,7 @@ const KNOWN_ORGANIZATIONS = {
   android: 'Google'
 };
 
-const PRACTICAL_YESNO_REGEX = /(?:กิน.*ได้ไหม|กินอะไรได้บ้าง|กินอาหารอะไรได้บ้าง|มีกี่ขา|บินได้ไหม|อันตรายไหม|เลี้ยงได้ไหม|เป็นพิษไหม|ทำไมถึง|ทำไม|วิธี(?:แก้)?|ทำยังไง|อย่างไร|ได้ไหม|ได้หรือไม่|ได้มั้ย|ได้หรือเปล่า|ได้ป่าว)/i;
+const PRACTICAL_YESNO_REGEX = /(?:กิน.*ได้ไหม|กินอะไรได้บ้าง|กินอาหารอะไรได้บ้าง|มีกี่ขา|บินได้ไหม|อันตรายไหม|เลี้ยงได้ไหม|เป็นพิษไหม|ทำไมถึง|ทำไม|วิธี(?:แก้)?|ทำยังไง|ทำไง|อย่างไร|ได้ไหม|ได้หรือไม่|ได้มั้ย|ได้หรือเปล่า|ได้ป่าว|ราคาทอง|ราคาน้ำมัน|ราคาเท่าไหร่|กี่บาท|บาทละ|ลิตรละ|ต่างกันยังไง|ต่างกันอย่างไร|รุ่นไหนดี|อันไหนดี|ที่ไหนดี)/i;
 const GREETINGS_REGEX = /^(?:สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|ขอบคุณ|ขอบใจ|บาย|ลาก่อน|hello\b|hi\b|thanks\b|thank you\b)/i;
 
 export function normalizeQuery(message, { focusEntity = null } = {}) {
@@ -391,6 +391,9 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
   if (/ผลิตภัณฑ์มวลรวมในประเทศ/.test(canonicalTopic)) {
     candidatesSet.add('ผลิตภัณฑ์มวลรวมในประเทศ');
   }
+  if (/^(?:python|ไพทอน)$/i.test(canonicalTopic)) {
+    candidatesSet.add('ภาษาไพทอน');
+  }
 
   const matchedLeading = LEADING_FRAME_REGEX.test(preprocessed);
   const matchedTrailing = TRAILING_FRAME_REGEX.test(preprocessed);
@@ -398,6 +401,8 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
 
   const SUBJECTIVE_OR_QUESTION_REGEX = /(?:ชอบ|คิดว่า|รู้สึก|เห็นด้วย|ดีกว่า|มากกว่า|แนะนำ|คิดเห็น|อะไร|ทำไม|อย่างไร|ยังไง|ไหน|หรือเปล่า|หรือไม่|หรือยัง|มั้ย|ไหม|เท่าไหร่|เท่าใด|กี่)/i;
   const ACTION_VERB_REGEX = /^(?:ยิง|เปิด|ปิด|ลบ|ส่ง|สร้าง|ทำลาย|โจมตี|เล่น|รัน|start\b|stop\b|launch\b|shoot\b|fire\b)/i;
+
+  const CONVERSATIONAL_OR_FEEDBACK_REGEX = /(?:เขียน|สะกด|พิมพ์|ตอบ|บอก|พูด|ผิด|ถูก|มั่ว|เพี้ยน|ไม่ใช่|ไม่จริง|เข้าใจ|หมายความ|ขอบคุณ|ขอโทษ|เก่ง|เยี่ยม|ดีมาก|แย่|งง|สับสน|ลองใหม่|เอาใหม่|อีกที|ใช่ไหม|ใช่ป่ะ|หรือเปล่า|หรอ|เหรอ|ทำไม|ยังไง|ได้ไหม|ได้มั้ย|สามารถ|คนกิน|กินได้|กินได้ไหม|กินอะไร)/i;
 
   const isGreeting = GREETINGS_REGEX.test(cleaned);
   const isBareNoun = Boolean(
@@ -409,14 +414,21 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
     !actionPredicate &&
     !SUBJECTIVE_OR_QUESTION_REGEX.test(cleaned) &&
     !ACTION_VERB_REGEX.test(cleaned) &&
+    !CONVERSATIONAL_OR_FEEDBACK_REGEX.test(cleaned) &&
+    !CONVERSATIONAL_OR_FEEDBACK_REGEX.test(raw) &&
     cleaned.split(/\s+/).length <= 2 &&
     cleaned.length >= 2 &&
-    cleaned.length <= 30 &&
+    cleaned.length <= 25 &&
     !/[?.,!]/.test(raw)
   );
 
+  const ADVISORY_OR_CREATIVE_REGEX = /(?:แนะนำ|ช่วยคิด|ช่วยหาไอเดีย|ไอเดีย|สอน|วิธี|ทำยังไง|ทำอย่างไร|ตั้งชื่อ|แต่ง|เขียน|เปรียบเทียบ|โค้ด|syntax|error|แก้ยังไง)/i;
+  const isAdvisoryOrCreative = ADVISORY_OR_CREATIVE_REGEX.test(raw);
+
   const isKnowledgeIntent = Boolean(
     !isGreeting &&
+    !isAdvisoryOrCreative &&
+    !CONVERSATIONAL_OR_FEEDBACK_REGEX.test(raw) &&
     canonicalTopic &&
     canonicalTopic.length >= 2 &&
     (isBareNoun || matchedLeading || matchedTrailing || hadAbbr || relationRole || isYesNoOrPractical || focusKeywords.length > 0 || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))
@@ -433,7 +445,9 @@ export function normalizeQuery(message, { focusEntity = null } = {}) {
     focusKeywords,
     relationRole,
     actionPredicate,
-    searchCandidates: Array.from(candidatesSet),
+    searchCandidates: /^(?:python|ไพทอน)$/i.test(canonicalTopic)
+      ? ['ภาษาไพทอน', ...Array.from(candidatesSet).filter((c) => c !== 'ภาษาไพทอน')]
+      : Array.from(candidatesSet),
     rawCleaned: cleaned,
     isKnowledgeIntent,
     isBareNoun,

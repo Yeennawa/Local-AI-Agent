@@ -14,7 +14,6 @@ const TOOL_LABELS = {
   search_web: 'ค้นหาข้อมูลทั่วไปบนอินเทอร์เน็ต เช่น วิธีการ คำถามชีวิตประจำวัน ศัพท์วัยรุ่น และเรื่องรอบตัว'
 };
 
-
 function describeTool(tool) {
   return TOOL_LABELS[tool.name] || tool.description;
 }
@@ -32,8 +31,34 @@ export function buildUnsupportedPlatformReply() {
   return 'ขออภัยครับ ตอนนี้ผมยังอ่านข้อมูลจาก Facebook, Twitter (X), Reddit และโซเชียลมีเดียอื่นไม่ได้ เพราะแพลตฟอร์มเหล่านี้จำกัดการเข้าถึง แต่ผมหาข่าวและข้อมูลหัวข้อเดียวกันจากสำนักข่าวให้ได้ครับ ลองบอกหัวข้อที่สนใจได้เลย';
 }
 
-export function buildDirectReply(reason, tools) {
+export function buildModelIdentityReply(model = 'qwen2.5:1.5b', message = '') {
+  const is3b = /3b/i.test(model);
+  const is15b = /1\.5b/i.test(model);
+  const activeLabel = is3b ? 'Qwen2.5 3B (Advanced Mode)' : 'Qwen2.5 1.5B (Lite Mode)';
+
+  const askingIf3b = /(?:ใช่|ใช้).*(?:3b|advanced)/i.test(message);
+  const askingIf15b = /(?:ใช่|ใช้).*(?:1\.5b|lite)/i.test(message);
+
+  if (askingIf3b) {
+    if (is3b) {
+      return 'ใช่ครับ ขณะนี้ผมทำงานด้วยโมเดล Qwen2.5 3B (Advanced Mode) รันแบบ Local ผ่าน Ollama ครับ';
+    }
+    return 'ตอนนี้ผมกำลังทำงานอยู่ในโหมด Lite Mode ซึ่งใช้โมเดล Qwen2.5 1.5B ครับ หากต้องการใช้ Qwen2.5 3B สามารถกดปุ่ม Adv (3B) ด้านบนเพื่อสลับโหมดได้เลยครับ';
+  }
+
+  if (askingIf15b) {
+    if (is15b) {
+      return 'ใช่ครับ ขณะนี้ผมทำงานด้วยโมเดล Qwen2.5 1.5B (Lite Mode) รันแบบ Local ผ่าน Ollama ครับ';
+    }
+    return 'ตอนนี้ผมกำลังทำงานอยู่ในโหมด Advanced Mode ซึ่งใช้โมเดล Qwen2.5 3B ครับ หากต้องการประหยัด RAM สามารถกดปุ่ม Lite (1.5B) ด้านบนเพื่อสลับโหมดได้ครับ';
+  }
+
+  return `ขณะนี้ผมทำงานด้วยโมเดล ${activeLabel} รันแบบ Local ผ่าน Ollama ภายในเครื่องครับ`;
+}
+
+export function buildDirectReply(reason, tools, model = 'qwen2.5:1.5b', message = '') {
   if (reason === 'capabilities') return buildCapabilityReply(tools);
   if (reason === 'unsupported_platform') return buildUnsupportedPlatformReply();
+  if (reason === 'model_identity') return buildModelIdentityReply(model, message);
   return null;
 }

@@ -1,8 +1,8 @@
 # Raspberry Pi 5 (4GB RAM) Production Runbook
 
-Target Device: Raspberry Pi 5 Model B (4GB RAM, 32GB MicroSD, Active Cooler)
-Runtime: Node.js 20+ LTS, Ollama Daemon (qwen2.5:1.5b)
-Primary Goal: Zero-crash multi-user stability, MicroSD longevity, and latency control under 4GB RAM.
+Target Device: Raspberry Pi 5 Model B (4GB RAM, 32GB MicroSD, Active Cooler)  
+Runtime: Node.js 20+ LTS, Ollama Daemon (qwen2.5:1.5b & qwen2.5:3b)  
+Primary Goal: Zero-crash multi-user stability, MicroSD longevity, and latency control under 4GB RAM.  
 
 ---
 
@@ -11,7 +11,7 @@ Primary Goal: Zero-crash multi-user stability, MicroSD longevity, and latency co
 - Physical RAM: 4096 MB (Shared with VideoCore GPU, ~3800 MB usable by Linux kernel)
 - Storage: MicroSD Card 32GB (Class 10 / A1 / A2)
 - Cooling: Official Raspberry Pi Active Cooler (PWM fan + heatsink)
-- Concurrency Reality: Ollama model `qwen2.5:1.5b` requires ~1.2 GB resident RAM. Running multiple parallel model inferences on 4GB RAM will trigger Linux OOM-killer (`Out of memory: Kill process`).
+- Concurrency Reality: Ollama model `qwen2.5:1.5b` requires ~1.2 GB resident RAM; `qwen2.5:3b` requires ~2.4 GB. Running multiple parallel model inferences on 4GB RAM will trigger Linux OOM-killer (`Out of memory: Kill process`).
 - MicroSD Flash Wear Hazard: Swapping to an SD card causes high write latency (100-300ms I/O wait) and burns flash memory cells rapidly. Disk swapping must be disabled in favor of in-memory compressed ZRAM.
 
 ---
@@ -85,10 +85,13 @@ sudo systemctl daemon-reload
 sudo systemctl restart ollama
 ```
 
-Verify model is downloaded and ready:
+Verify models are downloaded and ready:
 ```bash
+# Pull both Lite Mode (1.5B) and Advanced Mode (3B) models
+ollama pull qwen2.5:1.5b
+ollama pull qwen2.5:3b
 ollama list
-# Should display qwen2.5:1.5b (approx 986 MB)
+# Should display qwen2.5:1.5b (approx 986 MB) and qwen2.5:3b (approx 1.9 GB)
 ```
 
 ---
@@ -116,6 +119,8 @@ Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=OLLAMA_MODEL=qwen2.5:1.5b
 Environment=OLLAMA_HOST=http://127.0.0.1:11434
+# Optional: Set Tavily API Key for high-speed AI web search (DuckDuckGo fallback will be used if omitted)
+# Environment=TAVILY_API_KEY=tvly-xxxxxxxxxxxx
 
 [Install]
 WantedBy=multi-user.target

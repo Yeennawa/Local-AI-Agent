@@ -1,6 +1,47 @@
 import { normalizeQuery, expandAbbreviations } from './normalizer.js';
 import { getThaiJoke, explainSlangOrMeme, buildRoleplayPrompt } from './culture.js';
 
+export const CITY_TIMEZONES = {
+  'โตเกียว': 'Asia/Tokyo',
+  'ญี่ปุ่น': 'Asia/Tokyo',
+  'tokyo': 'Asia/Tokyo',
+  'japan': 'Asia/Tokyo',
+  'ลอนดอน': 'Europe/London',
+  'อังกฤษ': 'Europe/London',
+  'london': 'Europe/London',
+  'นิวยอร์ก': 'America/New_York',
+  'สหรัฐ': 'America/New_York',
+  'new york': 'America/New_York',
+  'ปารีส': 'Europe/Paris',
+  'ฝรั่งเศส': 'Europe/Paris',
+  'paris': 'Europe/Paris',
+  'โซล': 'Asia/Seoul',
+  'เกาหลี': 'Asia/Seoul',
+  'seoul': 'Asia/Seoul',
+  'korea': 'Asia/Seoul',
+  'สิงคโปร์': 'Asia/Singapore',
+  'singapore': 'Asia/Singapore',
+  'ฮ่องกง': 'Asia/Hong_Kong',
+  'hong kong': 'Asia/Hong_Kong',
+  'ซิดนีย์': 'Australia/Sydney',
+  'ออสเตรเลีย': 'Australia/Sydney',
+  'sydney': 'Australia/Sydney',
+  'กรุงเทพ': 'Asia/Bangkok',
+  'ไทย': 'Asia/Bangkok',
+  'bangkok': 'Asia/Bangkok'
+};
+
+export function extractCityTimezone(message) {
+  if (typeof message !== 'string') return null;
+  const lower = message.toLowerCase();
+  for (const [key, tz] of Object.entries(CITY_TIMEZONES)) {
+    if (lower.includes(key)) {
+      return { timezone: tz, city: key };
+    }
+  }
+  return null;
+}
+
 export function extractTopic(message, focusEntity = null) {
   if (typeof message !== 'string') return '';
   const { canonicalTopic } = normalizeQuery(message, { focusEntity });
@@ -29,7 +70,6 @@ export function extractGithubQuery(message) {
 
 const NEWS_REGEX = /ข่าว|\bnews\b|headlines?/i;
 
-// Order matters: first match wins. Patterns are also stripped from the message to find a leftover topic.
 const NEWS_CATEGORY_PATTERNS = [
   ['world', /ต่างประเทศ|(?<=ข่าว)โลก|ต่างชาติ|international|\bworld\b/i],
   ['tech', /เทคโนโลยี|ไอที|เทค|\btech(?:nology)?\b|\bai\b/i],
@@ -58,7 +98,6 @@ export function extractNewsParams(message) {
 const CAPABILITY_REGEX = /ทำอะไรได้|ช่วยอะไรได้|ทำอะไรเป็น|ความสามารถ|what can you do|capabilit(?:y|ies)|abilit(?:y|ies)/i;
 const CAPABILITY_FILLER_REGEX = /คุณ|เธอ|ตัวเอง|สามารถ|ทำอะไรได้|ช่วยอะไรได้|ทำอะไรเป็น|ความสามารถ|มีอะไร|อะไร|บ้าง|หรอ|เหรอ|ไหม|ครับ|ค่ะ|นะ|ได้|ของ|ตอนนี้|แม็กซ์|\bmax\b|บอท|\bai\b|\bwhat\b|\bcan\b|\byou\b|\bdo\b|\byour\b|capabilit(?:y|ies)|abilit(?:y|ies)|[?\s]/gi;
 
-// True only when the question is about the assistant itself, not "<topic> ทำอะไรได้บ้าง".
 export function isCapabilityInquiry(message) {
   if (!CAPABILITY_REGEX.test(message)) return false;
   return message.replace(CAPABILITY_FILLER_REGEX, '').length === 0;
@@ -74,8 +113,6 @@ export function extractWeatherLocation(message) {
   const cleaned = message.replace(WEATHER_FILLER_REGEX, ' ').replace(/\s+/g, ' ').trim();
   return cleaned.length >= 2 ? cleaned : 'Bangkok';
 }
-
-const FX_REGEX = /(?:อัตราแลกเปลี่ยน|ค่าเงิน|แลกเงิน|แปลงเงิน|exchange\s*rate|currency|\bto\s*thb\b)/i;
 
 export function extractFxParams(message) {
   if (typeof message !== 'string') return { base: 'USD', target: 'THB', amount: 1 };
@@ -119,44 +156,189 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
   }
 
   const raw = message.trim();
-  const lower = raw.toLowerCase();
 
-  // 1. Pure Greetings and Polite Chit-chat
+  // 1. Model Self-Awareness & Active LLM Inquiry (Tier 1 Adaptive RAG)
+  const isModelIdentityQuery = /^(?:แล้ว)?(?:คุณ|เธอ|ตัวเอง)?\s*(?:คือ\s*ใคร|ชื่อ\s*อะไร|เป็น\s*ใคร|model|โมเดล|llm|qwen|โหมด\s*ไหน|รุ่น\s*ไหน)/i.test(raw) ||
+    /(?:ตอนนี้|ปัจจุบัน).*(?:คุณ|เธอ|ตัวเอง|บอท).*(?:คือ|ใช้|รัน).*(?:model|โมเดล|llm|ตัวไหน|อะไร|โหมดไหน)/i.test(raw) ||
+    /^(?:แล้ว)?(?:คุณ|เธอ|ตัวเอง)?\s*(?:ใช่|ใช้)\s*(?:ของ\s*)?(?:model|โมเดล|llm|qwen|1\.5b|3b)/i.test(raw);
+  if (isModelIdentityQuery) {
+    return {
+      intent: 'direct',
+      toolCall: null,
+      confidence: 'high',
+      reason: 'model_identity'
+    };
+  }
+
+  // 2. Conversational Feedback, Corrections & Pushback (Tier 1 Adaptive RAG)
+  const isFeedbackOrCorrection = /(?:เขียน|สะกด|พิมพ์|ตอบ|บอก|ชื่อ).*(?:ผิด|มั่ว|เพี้ยน|ไม่ถูก)/i.test(raw) ||
+    /^(?:ผิดแล้ว|ไม่ใช่(?:นะ|ครับ|ค่ะ)?|มั่วแล้ว|ตอบใหม่|เอาใหม่|พูดใหม่|อธิบายเพิ่ม|สรุปสั้นๆ|แปลเป็น|จริงหรอ|แน่ใจนะ)/i.test(raw);
+  if (isFeedbackOrCorrection) {
+    return {
+      intent: 'finish',
+      toolCall: null,
+      confidence: 'high',
+      reason: 'conversational_feedback'
+    };
+  }
+
+  // 3. Pure Greetings and Polite Chit-chat
   const isGreeting = /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล|hello(?:\s+there)?|hi(?:\s+there)?|hey|good\s+(?:morning|evening|afternoon)|สบายดีไหม|เป็นไงบ้าง|เป็นอย่างไรบ้าง|ขอบคุณ(?:มาก)?(?:นะ)?(?:ครับ|ค่ะ)?|thanks(?:\s+a\s+lot)?|thank\s+you|บาย(?:ครับ|ค่ะ|นะ)?|ลาก่อน(?:ครับ|ค่ะ|นะ)?|bye|goodbye)\s*$/i.test(raw) ||
     /^(?:สวัสดี(?:ครับ|ค่ะ)?|หวัดดี|ดีครับ|ดีค่ะ|ฮัลโหล)\s*(?:แนะนำตัว|ช่วยแนะนำตัว|ทักทาย)/i.test(raw);
   if (isGreeting) {
     return { intent: 'finish', toolCall: null, confidence: 'high', reason: 'greeting_chat' };
   }
 
-  // 1b. Questions about the assistant itself are answered from the real tool list.
+  // 2. Emotional expressions and subjective opinions (direct conversational finish)
+  const isEmotionalOrOpinion = /^(?:เหนื่อย|ท้อ|เหงา|เบื่อ|เครียด|หิว|ง่วง|ดีใจ|เศร้า)(?:จัง|มาก|จังเลย|ชะมัด|อ่ะ|เลย|นะ|\s|วันนี้)*$/i.test(raw) ||
+    /(?:คุณคิดว่า|คิดว่า|มีความเห็นว่า|ชอบ).*(?:อะไรดีกว่า|ดีไหม|ดีปะ|ยังไงดี|ดีกว่ากัน|มากกว่ากัน|อะไรมากกว่า)/i.test(raw);
+  if (isEmotionalOrOpinion) {
+    return { intent: 'finish', toolCall: null, confidence: 'high', reason: 'emotional_opinion_chat' };
+  }
+
+  // 3. Capabilities & Unsupported Platforms
   if (isCapabilityInquiry(raw)) {
     return { intent: 'direct', toolCall: null, confidence: 'high', reason: 'capabilities' };
   }
-
-  // 1c. Social platforms we cannot read: say so honestly instead of letting the model improvise.
   if (UNSUPPORTED_PLATFORM_REGEX.test(raw) && READ_INTENT_REGEX.test(raw)) {
     return { intent: 'direct', toolCall: null, confidence: 'high', reason: 'unsupported_platform' };
   }
 
-  // 1c-1. Jokes and humor
+  // 4. Jokes & Slang
   const isJoke = /^(?:เล่า(?:เรื่อง)?(?:มุก|โจ๊ก)?(?:ตลก|ขำขัน|ฮาๆ|ขำๆ|กวนๆ)|ขอ(?:มุก|โจ๊ก)?(?:ตลก|ฮาๆ|ขำๆ)|มุกตลก|joke)/i.test(raw);
   if (isJoke) {
     return { intent: 'joke', toolCall: null, confidence: 'high', reason: 'joke_request' };
   }
 
-  // 1c-2. Slang & Pop Culture Definitions
   const norm = normalizeQuery(raw, { focusEntity });
   if (norm.isSlang && norm.slangExplanation) {
     return { intent: 'slang', toolCall: null, confidence: 'high', reason: 'slang_definition', text: norm.slangExplanation };
   }
 
-  // 1c-3. Roleplay & Persona Adapter
+  // 5. Roleplay & Persona Adapter
   const roleplayInstruction = buildRoleplayPrompt(raw);
   if (roleplayInstruction) {
     return { intent: 'roleplay', toolCall: null, confidence: 'high', reason: 'roleplay_persona', prompt: roleplayInstruction };
   }
 
-  // 1d. News of any category or topic.
+  // 6. Sports, matches & fixtures
+  const isSportsQuery = /(?:ฟุตบอล|ฟุตซอล|พรีเมียร์ลีก|ไทยลีก|ยูฟ่า|แชมเปียนส์ลีก|บอลโลก|ผลบอล|ตารางแข่ง|ใครเตะ|แข่งกับใคร|ตารางบอล|บอลคืนนี้)/i.test(raw);
+  if (isSportsQuery) {
+    return {
+      intent: 'tool',
+      toolCall: { name: 'get_news', params: extractNewsParams(raw) },
+      confidence: 'high',
+      reason: 'sports_news'
+    };
+  }
+
+  // 7. Live prices, commodities & rates
+  const isLivePriceQuery = /(?:ราคาทอง|ราคาน้ำมัน|ราคาหุ้น|บิตคอยน์|คริปโต|ทองคำแท่ง|ทองรูปพรรณ|น้ำมันวันนี้|ทองวันนี้)/i.test(raw) ||
+    /(?:ราคา|เรท|บาทละ|ลิตรละ).*(?:ทอง|น้ำมัน|หุ้น|btc|crypto|bitcoin)/i.test(raw) ||
+    /(?:ทอง|น้ำมัน|หุ้น|btc).*(?:ราคา|บาทละ|เท่าไหร่|กี่บาท)/i.test(raw);
+  if (isLivePriceQuery) {
+    return {
+      intent: 'tool',
+      toolCall: { name: 'search_web', params: { query: raw } },
+      confidence: 'high',
+      reason: 'live_price_lookup'
+    };
+  }
+
+  // 8. Foreign Exchange (FX)
+  const isFxQuery = /(?:อัตราแลกเปลี่ยน|ค่าเงิน|แลกเงิน|แปลงเงิน|exchange\s*rate|currency|\bto\s*[a-z]{3}\b)/i.test(raw) ||
+    /(?:\d+\s*)?(?:usd|thb|jpy|eur|gbp|ดอลลาร์|เยน|ยูโร|ปอนด์)\s*(?:เท่ากับ|เป็นเงินไทย|เป็น)?\s*กี่\s*(?:[a-z]{3}|บาท|ดอลลาร์|เยน|ยูโร|วอน|หยวน)/i.test(raw);
+  if (isFxQuery) {
+    return {
+      intent: 'tool',
+      toolCall: { name: 'get_fx', params: extractFxParams(raw) },
+      confidence: 'high',
+      reason: 'fx_lookup'
+    };
+  }
+
+  // 9. Hardware & System Metrics
+  const isSystemMetric = /(?:แรม|หน่วยความจำ|สเปก|สเปค|สถานะเครื่อง|ความจุ|ฮาร์ดแวร์|เปิดเครื่อง|เปิดทำงาน|cpu|ram|memory|uptime|system info|อุณหภูมิ\s*(?:ของ)?(?:เครื่อง|cpu|ซีพียู))/i.test(raw);
+  if (isSystemMetric) {
+    return {
+      intent: 'tool',
+      toolCall: { name: 'get_system_info', params: {} },
+      confidence: 'high',
+      reason: 'system_metrics'
+    };
+  }
+
+  // 10. Weather & Temperature Check
+  const isHowToOrRemedy = /(?:ทำไง|ทำอย่างไร|วิธี|แก้|แก้ไข|รักษา|กิน|ทำไม)/i.test(raw);
+  const isWeatherQuery = !isHowToOrRemedy && (
+    /(?:สภาพ)?อากาศ|พยากรณ์อากาศ|ฝนจะตกไหม|ฝนตกไหม|จะตกไหม|ร้อนไหม|หนาวไหม|แดดออกไหม|weather|forecast/i.test(raw) ||
+    (/(?:อุณหภูมิ|temperature)/i.test(raw) && !/cpu|ซีพียู|เครื่อง|ฮาร์ดแวร์|แรม|ram/i.test(raw))
+  );
+  if (isWeatherQuery) {
+    const location = extractWeatherLocation(raw);
+    return {
+      intent: 'tool',
+      toolCall: { name: 'get_weather', params: { location } },
+      confidence: 'high',
+      reason: 'weather_lookup'
+    };
+  }
+
+  // 11. Time: City Timezone or Explicit Local Time
+  const isCityTimeQuery = /(?:เวลา|กี่โมง|time)\s*(?:ใน|ที่|ณ|ของ)\s*/i.test(raw) ||
+    /(?:ใน|ที่)\s*([a-zA-Zก-๙\s]+)\s*(?:กี่โมง|เวลาเท่าไหร่)/i.test(raw);
+  const matchedCityTz = extractCityTimezone(raw);
+  if (isCityTimeQuery && matchedCityTz) {
+    return {
+      intent: 'tool',
+      toolCall: { name: 'get_current_time', params: { timezone: matchedCityTz.timezone } },
+      confidence: 'high',
+      reason: 'city_time'
+    };
+  }
+
+  const isHistoricalQuery = /(?:เกิด|สร้าง|ก่อตั้ง|ตาย|เสียชีวิต|ประสูติ|สิ้นพระชนม์|ยุบ|ค้นพบ)/i.test(raw);
+  const hasExplicitTimeNoun = !isHistoricalQuery && /(?:กี่โมง|เวลาเท่าไหร่|เวลาเท่าใด|เวลาอะไร|เวลากี่โมง|ขอดูเวลา|บอกเวลา|เวลานี้|วันนี้วันที่|วันที่เท่าไหร่|วันอะไร|เดือนอะไร|ปีนี้ปีอะไร|ตอนนี้ปีอะไร|what time|current time|today's date)/i.test(raw);
+  if (hasExplicitTimeNoun) {
+    return {
+      intent: 'tool',
+      toolCall: { name: 'get_current_time', params: {} },
+      confidence: 'high',
+      reason: 'explicit_time'
+    };
+  }
+
+  // 12. Math & Arithmetic Calculation
+  const isMathQuery = /(?:คำนวณ|คิดเลข|calculate|solve)/i.test(raw) ||
+    /\d+\s*(?:บวก|ลบ|\+|\-|คูณ|\*|หาร|\/)\s*\d+/.test(raw) ||
+    /\(?\d+\s*[\+\-\*\/]\s*\d+\)?/.test(raw);
+  if (isMathQuery) {
+    const expression = extractMathExpression(raw);
+    if (expression) {
+      return {
+        intent: 'tool',
+        toolCall: { name: 'calculate', params: { expression } },
+        confidence: 'high',
+        reason: 'arithmetic_calculation'
+      };
+    }
+  }
+
+  // 13. GitHub Search
+  const isGithubQuery = /(?:github|repo\b|repository\b|คลังโค้ด)/i.test(raw);
+  if (isGithubQuery) {
+    const query = extractGithubQuery(raw);
+    if (query) {
+      return {
+        intent: 'tool',
+        toolCall: { name: 'search_github', params: { query } },
+        confidence: 'high',
+        reason: 'github_search'
+      };
+    }
+  }
+
+  // 14. News (General & Topic News)
   if (NEWS_REGEX.test(raw)) {
     return {
       intent: 'tool',
@@ -166,163 +348,62 @@ export function routeIntent({ message, history = [], focusEntity = null }) {
     };
   }
 
-  // 1e. Weather & Forecast Check
-  const isHardwareTemp = /อุณหภูมิ\s*(?:ของ)?(?:เครื่อง|cpu|ซีพียู)/i.test(raw);
-  const isWeatherQuery = !isHardwareTemp && (
-    /(?:สภาพ)?อากาศ|พยากรณ์อากาศ|ฝนจะตกไหม|ฝนตกไหม|จะตกไหม|weather|forecast/i.test(raw) ||
-    (/(?:อุณหภูมิ|temperature)/i.test(raw) && !/cpu|ซีพียู|เครื่อง|ฮาร์ดแวร์|แรม|ram/i.test(raw))
+  // 15. Person / Office-holder / Creator Questions (Wikipedia)
+  const hasPersonOrOfficeRole = !isSportsQuery && !isModelIdentityQuery && (
+    /(?:ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|เกิด(?:ปี|เมื่อ|ที่)|เสียชีวิต|ตายเมื่อ|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who is|prime minister|president)/i.test(raw) ||
+    /ใคร(?:เป็น(?:ผู้|คน)?)?(?:สร้าง|คิดค้น|ก่อตั้ง|พัฒนา|แต่ง|เขียน|ประพันธ์|ร้อง|กำกับ|แสดงนำ|ค้นพบ)|เจ้าของบริษัท|เป็นของบริษัทอะไร|ผู้บริหารสูงสุด|ซีอีโอ|\bceo\b/i.test(raw)
   );
-  if (isWeatherQuery) {
-    const location = extractWeatherLocation(raw);
-    return {
-      intent: 'tool',
-      toolCall: {
-        name: 'get_weather',
-        params: { location }
-      },
-      confidence: 'high',
-      reason: 'weather_lookup'
-    };
-  }
-
-  // 1f. Foreign Exchange & Currency Conversion Check
-  const isFxQuery = /(?:อัตราแลกเปลี่ยน|ค่าเงิน|แลกเงิน|แปลงเงิน|exchange\s*rate|currency|\bto\s*[a-z]{3}\b)/i.test(raw) ||
-    /(?:\d+\s*)?(?:usd|thb|jpy|eur|gbp|ดอลลาร์|เยน|ยูโร|ปอนด์)\s*(?:เท่ากับ|เป็นเงินไทย|เป็น)?\s*กี่\s*(?:[a-z]{3}|บาท|ดอลลาร์|เยน|ยูโร|วอน|หยวน)/i.test(raw);
-  if (isFxQuery) {
-    const params = extractFxParams(raw);
-    return {
-      intent: 'tool',
-      toolCall: {
-        name: 'get_fx',
-        params
-      },
-      confidence: 'high',
-      reason: 'fx_lookup'
-    };
-  }
-
-  // 2. Conflict Rule: Person / Entity / Office-holder questions
-  // Questions containing "ใคร" or government/leadership roles must NEVER be routed to time tool,
-  // even if they contain temporal words like "ตอนนี้", "ปัจจุบัน", "now", "currently".
-  const hasPersonOrOfficeRole = /(?:ใคร|ใครคือ|คือใคร|ใครเป็น|เป็นใคร|ชื่ออะไร|นายก|นายกรัฐมนตรี|ประธานาธิบดี|ปธน|ผู้ว่า|รัฐมนตรี|กษัตริย์|พระมหากษัตริย์|ร\.9|ร\.10|รัชกาลที่|who|who is|prime minister|president)/i.test(raw);
   if (hasPersonOrOfficeRole) {
     const topic = extractTopic(raw, focusEntity) || (raw.includes('นายก') ? 'นายกรัฐมนตรีไทย' : raw);
     return {
       intent: 'tool',
-      toolCall: {
-        name: 'search_wikipedia',
-        params: { topic }
-      },
+      toolCall: { name: 'search_wikipedia', params: { topic } },
       confidence: 'high',
       reason: 'person_entity_knowledge'
     };
   }
 
-  // 3. Explicit Time / Date Check
-  // Must contain concrete time nouns. General adverbs ("ตอนนี้", "ปัจจุบัน") alone do NOT qualify.
-  const hasExplicitTimeNoun = /(?:กี่โมง|เวลาเท่าไหร่|เวลาเท่าใด|เวลาอะไร|เวลากี่โมง|ขอดูเวลา|บอกเวลา|เวลานี้|วันนี้วันที่|วันที่เท่าไหร่|วันอะไร|เดือนอะไร|ปีอะไร|what time|current time|today's date)/i.test(raw);
-  if (hasExplicitTimeNoun) {
+  // 16. Explicit Web Search Intent & Modern Live Information (Tavily AI Primary)
+  const isExplicitWebSearch = /(?:ค้นเว็บ|เสิร์ชเว็บ|หาในเน็ต|ค้นหาในเว็บ|เสิร์ชกูเกิล|เสิร์ชดูหน่อย|เสิร์ชหา|ค้นหาเว็บ|search\s*web)/i.test(raw);
+  const isModernLiveQuery = (
+    /(?:202[4-9]|256[7-9]|อัปเดตล่าสุด|รุ่นล่าสุด|เวอร์ชันล่าสุด|ใหม่ล่าสุด|เทรนด์ล่าสุด|รีวิว|โปรโมชั่น|ซื้อที่ไหน)/i.test(raw) ||
+    /(?:pm\s*2\.?5|ค่าฝุ่น|ดัชนีคุณภาพอากาศ|\baqi\b|แผ่นดินไหว|น้ำท่วมวันนี้|สถานการณ์.*ล่าสุด|สถานการณ์ปัจจุบัน)/i.test(raw) ||
+    /(?:อันดับโลก|ตารางคะแนน|ใครชนะเลือกตั้ง|แชมป์ล่าสุด|ตอนนี้ใครเป็น)/i.test(raw) ||
+    /(?:ราคา|ค่าสมัคร|ค่ารถ|ค่าเทอม|ค่าบริการ|เงินเดือน).*(?:เท่าไหร่|กี่บาท)/i.test(raw)
+  ) && !/(?:คืออะไร|คือใคร|ประวัติ|หมายถึงอะไร)/i.test(raw);
+
+  if (isExplicitWebSearch || isModernLiveQuery) {
+    const query = (isExplicitWebSearch && norm.searchCandidates[0]) ? norm.searchCandidates[0] : raw.trim();
     return {
       intent: 'tool',
-      toolCall: {
-        name: 'get_current_time',
-        params: {}
-      },
+      toolCall: { name: 'search_web', params: { query } },
       confidence: 'high',
-      reason: 'explicit_time'
+      reason: isExplicitWebSearch ? 'explicit_web_search' : 'modern_live_search'
     };
   }
 
-  // 4. System Info Check (Hardware & OS metrics)
-  const isSystemMetric = /(?:แรม|หน่วยความจำ|สเปก|สเปค|สถานะเครื่อง|ความจุ|ฮาร์ดแวร์|เปิดเครื่อง|เปิดทำงาน|cpu|ram|memory|uptime|system info|อุณหภูมิ\s*(?:ของ)?(?:เครื่อง|cpu|ซีพียู))/i.test(raw);
-  if (isSystemMetric) {
-    return {
-      intent: 'tool',
-      toolCall: {
-        name: 'get_system_info',
-        params: {}
-      },
-      confidence: 'high',
-      reason: 'system_metrics'
-    };
-  }
+  // 17. Knowledge & Conceptual Questions (Wikipedia)
+  const isAdvisoryOrCreative = /(?:แนะนำ|ช่วยคิด|ไอเดีย|สอน|วิธี|ทำยังไง|ทำอย่างไร|ตั้งชื่อ|แต่ง|เขียน|เปรียบเทียบ|โค้ด|syntax)/i.test(raw);
+  const isPracticalExclude = /(?:กิน.*ได้ไหม|อันตรายไหม|เป็นพิษไหม|ทำไม|ต่างกันยังไง|ต่างกันอย่างไร|รุ่นไหนดี|อันไหนดี|ที่ไหนดี|ช่วงเดือนไหน)/i.test(raw);
+  const isKnowledgePattern = !isPracticalExclude && /(?:คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ตั้งอยู่ที่ไหน|อยู่จังหวัดอะไร|อยู่ประเทศอะไร|เมืองหลวงของ|สกุลเงินของ|ข้อมูลเกี่ยวกับ|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบายเรื่อง|อธิบายเรื่อง|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|(?:ก่อตั้ง|สร้างขึ้น|เปิดตัว|วางจำหน่าย|เข้าฉาย|เริ่มใช้|ค้นพบ)\s*(?:เมื่อไหร่|เมื่อใด|ปีไหน|ปีอะไร|พ\.ศ\.\s*อะไร|ค\.ศ\.\s*อะไร)|ตรงกับวันที่เท่าไหร่|(?:สูง|ยาว|ลึก|กว้าง|พื้นที่|ห่างกัน)\s*(?:เท่าไหร่|เท่าใด|กี่)|ประชากรกี่|มีทั้งหมดกี่|มีกี่\s*(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|แห่ง|คน|ตอน|ภาค|รุ่น|ชนิด|ประเภท|ดวง|ดาว))/i.test(raw);
 
-  // 5. Math and Calculation Check
-  const isMathQuery = /(?:คำนวณ|คิดเลข|calculate|solve)/i.test(raw) ||
-    /\d+\s*(?:บวก|ลบ|\+|\-|คูณ|\*|หาร|\/)\s*\d+/.test(raw) ||
-    /\(?\d+\s*[\+\-\*\/]\s*\d+\)?/.test(raw);
-  if (isMathQuery) {
-    const expression = extractMathExpression(raw);
-    if (expression) {
-      return {
-        intent: 'tool',
-        toolCall: {
-          name: 'calculate',
-          params: { expression }
-        },
-        confidence: 'high',
-        reason: 'arithmetic_calculation'
-      };
-    }
-  }
-
-  // 6. GitHub Search Check (Open source & repository search)
-  const isGithubQuery = /(?:github|repo\b|repository\b|คลังโค้ด)/i.test(raw);
-  if (isGithubQuery) {
-    const query = extractGithubQuery(raw);
-    if (query) {
-      return {
-        intent: 'tool',
-        toolCall: {
-          name: 'search_github',
-          params: { query }
-        },
-        confidence: 'high',
-        reason: 'github_search'
-      };
-    }
-  }
-
-  // 7. Practical & Everyday Life Queries (Web Search)
-  const isExplicitWiki = /(?:วิกิ|wikipedia|คืออะไร|คือใคร|เป็นใคร|ประวัติ|ประวัติศาสตร์)/i.test(raw);
-  if (norm.isPracticalQuery && !isExplicitWiki) {
-    const query = norm.searchCandidates[0] || raw;
-    return {
-      intent: 'tool',
-      toolCall: {
-        name: 'search_web',
-        params: { query }
-      },
-      confidence: 'high',
-      reason: 'practical_web_search'
-    };
-  }
-
-
-  // 8. Knowledge & Conceptual Questions (Wikipedia)
-  const isKnowledgePattern = /(?:คืออะไร|คือใคร|เป็นใคร|ชื่ออะไร|ประวัติ|ประวัติศาสตร์|หมายถึงอะไร|อยู่ที่ไหน|ทำอะไรได้บ้าง|ข้อมูลเกี่ยวกับ|ค้นหา|วิกิ|wikipedia|what is|who is|explain|ช่วยอธิบาย|อธิบาย|อยากรู้เรื่อง|อยากทราบเรื่อง|เล่าเรื่อง|มีกี่(?:จังหวัด|เขต|สายพันธุ์|ประเทศ|คน|แห่ง|ข้อ|อัน|ตัว)|กี่องศา|เกิดเมื่อไหร่|สร้างเมื่อไหร่)/i.test(raw);
-
-  if (isKnowledgePattern || norm.isKnowledgeIntent || (focusEntity && /(?:แล้ว)?มัน/i.test(raw))) {
+  if (!isFeedbackOrCorrection && !isAdvisoryOrCreative && (isKnowledgePattern || (norm.isKnowledgeIntent && !norm.isYesNoOrPractical) || (focusEntity && /(?:แล้ว)?มัน/i.test(raw)))) {
     const topic = norm.canonicalTopic || extractTopic(raw, focusEntity) || raw;
     if (topic && topic.length >= 2) {
       return {
         intent: 'tool',
-        toolCall: {
-          name: 'search_wikipedia',
-          params: { topic }
-        },
+        toolCall: { name: 'search_wikipedia', params: { topic } },
         confidence: 'high',
         reason: norm.isBareNoun ? 'bare_noun_knowledge' : 'knowledge_lookup'
       };
     }
   }
 
-  // 9. Ambiguous / Complex request requiring LLM reasoning
+  // 18. Adaptive RAG Fallthrough: General QA, common sense, advice, coding, and chat go directly to LLM
   return {
-    intent: 'unknown',
+    intent: 'finish',
     toolCall: null,
-    confidence: 'low',
-    reason: 'ambiguous_query'
+    confidence: 'high',
+    reason: 'default_chat'
   };
-
 }
