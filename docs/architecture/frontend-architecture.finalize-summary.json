@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Projects\\Local-AI-Agent\\.archify\\frontend-architecture\\candidate.json",
+    "sha256": "7c6b07efd806fe833582d16a70629c5fdba58dfe3eddd6650262ba4bf13453c7",
+    "bytes": 4732
+  },
+  "artifact": {
+    "path": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\frontend-architecture.html",
+    "sha256": "f098037d34ea538759e922abcd2fcf582b671e89e8b952269f6c35e545bd0785",
+    "bytes": 856712
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\frontend-architecture.finalize.json",
+    "summaryReceipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\frontend-architecture.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\frontend-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-25T15:58:07.631Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5279,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 2,
+      "routesOverSuggestedStretch": 1
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "f2",
+            "from": "header_controls",
+            "to": "rest_client",
+            "label": "Switch Model / Reset",
+            "collectionIndex": 1,
+            "artifactIndex": 2
+          },
+          "bends": 5,
+          "stretch": 1.572
+        },
+        {
+          "relationship": {
+            "id": "f10",
+            "from": "rest_client",
+            "to": "telemetry_drawer",
+            "label": "2s Kernel Poll",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "bends": 3,
+          "stretch": 1.107,
+          "directCorridorBlockers": [
+            {
+              "id": "chat_feed",
+              "label": "Chat Feed &amp; Bubbles",
+              "box": [
+                530,
+                380,
+                170,
+                64
+              ]
+            }
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "header_controls → rest_client needs 5 bends: move node header_controls or rest_client so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

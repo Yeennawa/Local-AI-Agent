@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Projects\\Local-AI-Agent\\.archify\\ai-agent-pipeline\\candidate.json",
+    "sha256": "c35cea00384cbb14573d4e3362f7dfa0934b6436e202917da829ead255e99042",
+    "bytes": 4861
+  },
+  "artifact": {
+    "path": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\ai-agent-pipeline.html",
+    "sha256": "ce2fe0a438f03ec4277f5a1bc6598dc194fc8aea17ecc48bcd8cace9f1ba7ad4",
+    "bytes": 857761
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\ai-agent-pipeline.finalize.json",
+    "summaryReceipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\ai-agent-pipeline.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\ai-agent-pipeline.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-25T15:58:07.631Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5607,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "resolvedCrossovers": 1,
+      "routesOverSuggestedBends": 3
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [
+        {
+          "left": {
+            "id": "e4",
+            "from": "intent_router",
+            "to": "tool_registry",
+            "label": "Structured Tool",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "right": {
+            "id": "e5",
+            "from": "intent_router",
+            "to": "linux_engine",
+            "label": "Linux Mode / Task",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "point": [
+            445,
+            346
+          ],
+          "sharedNode": "intent_router"
+        }
+      ],
+      "detours": [
+        {
+          "relationship": {
+            "id": "e2",
+            "from": "entry_seam",
+            "to": "query_prep",
+            "label": "Sanitize &amp; Normalize",
+            "collectionIndex": 1,
+            "artifactIndex": 2
+          },
+          "bends": 3,
+          "stretch": 1.282
+        },
+        {
+          "relationship": {
+            "id": "e4",
+            "from": "intent_router",
+            "to": "tool_registry",
+            "label": "Structured Tool",
+            "collectionIndex": 3,
+            "artifactIndex": 4
+          },
+          "bends": 4,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "e7",
+            "from": "tool_registry",
+            "to": "answer_composer",
+            "label": "0-Token Format",
+            "collectionIndex": 6,
+            "artifactIndex": 7
+          },
+          "bends": 3,
+          "stretch": 1.257
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "intent_router → tool_registry and intent_router → linux_engine cross next to intent_router: move node tool_registry or linux_engine so the two reach intent_router from different sides (for example one level with it, one directly above or below it).",
+      "entry_seam → query_prep needs 3 bends: move node entry_seam or query_prep so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "intent_router → tool_registry needs 4 bends: move node intent_router or tool_registry so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "tool_registry → answer_composer needs 3 bends: move node tool_registry or answer_composer so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

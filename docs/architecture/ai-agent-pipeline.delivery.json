@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "c3672a7e-5251-4057-86aa-ad518e99d0a2",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Projects\\Local-AI-Agent\\.archify\\ai-agent-pipeline\\candidate.json",
+  "output": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\ai-agent-pipeline.html",
+  "specification": {
+    "sha256": "c35cea00384cbb14573d4e3362f7dfa0934b6436e202917da829ead255e99042",
+    "bytes": 4861
+  },
+  "artifact": {
+    "sha256": "ce2fe0a438f03ec4277f5a1bc6598dc194fc8aea17ecc48bcd8cace9f1ba7ad4",
+    "bytes": 857761
+  }
+}

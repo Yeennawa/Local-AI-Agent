@@ -2,13 +2,18 @@
 
 เอกสารแนะนำสถาปัตยกรรมและการเชื่อมต่อของส่วนติดต่อผู้ใช้ (Frontend Web Client) สำหรับโปรเจกต์ `Local-AI-Agent`
 
+![Frontend Web UI](../docs/assets/web-ui-overview.png)
+
+> **แผนผังสถาปัตยกรรมและการไหลของ Event ฝั่ง Frontend (Interactive HTML พร้อมส่งออกรูปทำสไลด์):**  
+> คลิกเปิดไฟล์ **[frontend-architecture.html](../docs/architecture/frontend-architecture.html)** บนเว็บเบราว์เซอร์เพื่อสำรวจการทำงานของ SSE Stream, แอนิเมชันอวตาร 0-CPU, และแผงวัดสถิติ Real-time พร้อมกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อนำภาพไปใส่สไลด์ได้ทันที
+
 ---
 
 ## 1. ภาพรวมและหน้าที่ของ Frontend
 
 Frontend ของระบบทำหน้าที่เป็นส่วนแสดงผลแบบโต้ตอบ (Interactive Web Client) ผ่านเว็บเบราว์เซอร์ โดยเชื่อมต่อกับ Backend ผ่าน HTTP REST API และ Server-Sent Events (SSE) มีหน้าที่หลักดังนี้:
 
-1. **รับและส่งข้อความสนทนา**: รับข้อความคำถามจากผู้ใช้ จัดการประวัติการสนทนา (Sliding Window) และส่งต่อไปยัง Backend
+1. **รับและส่งข้อความสนทนา**: รับข้อความคำถามจากผู้ใช้ จัดการประวัติการสนทนา (Sliding Window 30 รอบ) และส่งต่อไปยัง Backend
 2. **แสดงผลแบบ Streaming**: รับข้อมูลผลลัพธ์ทีละ Token ผ่าน SSE เพื่อแสดงผลข้อความตอบกลับแบบค่อยๆ พิมพ์ (Typewriter Effect)
 3. **ควบคุมโหมดการทำงาน**:
    - **Model Switcher**: สลับโหมด AI ระหว่าง `Lite (1.5B)` และ `Adv (3B)`
@@ -20,7 +25,7 @@ Frontend ของระบบทำหน้าที่เป็นส่ว�
    - รองรับการเปิด/ปิดด้วยปุ่ม `สถิติ Token` เพื่อไม่ให้บดบังการอ่าน
 5. **แอนิเมชัน Avatar State Machine**: ขับเคลื่อนตัวละครอวตาร (`.ai-character`) ผ่าน CSS GPU Compositor บนเบราว์เซอร์ (ไม่กิน CPU ของบอร์ด Pi) รองรับ 6 สถานะ: `idle` (กะพริบตาและหายใจ), `listening` (เอียงหูฟังตอนพิมพ์), `queued` (รอคิว), `thinking` (สัญญาณเสากะพริบ), `tool` (ตาสแกนอ่านข้อมูล), `speaking` (ปากขยับตามโทเค็น) และสีหน้าอารมณ์ (`happy`, `neutral`, `surprised`, `confused`, `proud`) พร้อมรองรับ `prefers-reduced-motion`
 6. **แสดงป้ายกำกับความโปร่งใส (Metadata Badges)**: แสดงชื่อโมเดลและเครื่องมือที่ถูกเรียกใช้งานจริงใต้ข้อความตอบกลับทุกข้อความ
-7. **ระบบแจ้งเตือน Fallback**: แสดงแบนเนอร์แจ้งเตือนเมื่อระบบสลับไปใช้บริการสำรอง (เช่น สลับไป DuckDuckGo เมื่อไม่มี Tavily API Key)
+7. **ระบบการ์ดคำสั่ง Linux (`.linux-card`)**: แสดงผลคำสั่ง Linux พร้อมป้ายระดับความเสี่ยง (Read-only / Modify / Destructive), ตารางอธิบาย Flag, ปุ่มคัดลอกคำสั่ง, และปุ่มรันบนบอร์ด Pi พร้อมแสดงผล Terminal จำลอง
 
 ---
 
@@ -82,52 +87,18 @@ Content-Type: application/json
 ```
 
 #### Server-Sent Events ที่ Frontend ดักฟัง:
-1. `event: status`: ส่งสถานะการทำงานปัจจุบัน
+1. `event: queue`: ส่งข้อมูลสถานะคิวงาน (`position`, `estimatedWaitSec`, `runningJob`)
+2. `event: status`: ส่งสถานะการทำงานปัจจุบัน
+   - ขณะวิเคราะห์: `{ "status": "analyzing", "mode": "auto" }`
+   - ขณะคัดกรอง: `{ "status": "routed", "intent": "tool", "reasonThai": "เลือกเครื่องมือ..." }`
    - ขณะเรียก Tool: `{ "status": "using_tool", "tool": "get_weather", "label": "กำลังตรวจสอบสภาพอากาศ..." }`
-   - ขณะเริ่มสังเคราะห์: `{ "status": "synthesizing", "estimatedPromptTokens": 280, "maxContextTokens": 4096 }` (นำไปอัปเดตมาตรวัด Token ฝั่ง Client ทันที)
-   - ขณะแจ้งเตือน: `{ "status": "notice", "code": "tavily_key_missing", "message": "ไม่พบ Tavily API Key..." }`
-2. `event: token`: ชิ้นส่วนคำตอบที่ทยอยส่งออกมา
-   - `{ "token": "ขณะนี้" }`
-3. `event: done`: ผลลัพธ์สุดท้ายฉบับสมบูรณ์เมื่อประมวลผลเสร็จสิ้น
-   - ประกอบด้วย `text`, `feeling`, `toolsUsed`, `modelLabel`, และ `usage` (Telemetry ข้อมูลจริงจากเซิร์ฟเวอร์)
-4. `event: error`: ส่งข้อความข้อผิดพลาดเมื่อเกิดปัญหาในระบบ
-
----
-
-### 4.2 การสลับโหมดโมเดล AI (`POST /api/model/switch`)
-
-เมื่อผู้ใช้คลิกปุ่ม `Lite (1.5B)` หรือ `Adv (3B)`:
-
-#### Request Body:
-```json
-{
-  "mode": "advanced"
-}
-```
-
-#### Response:
-```json
-{
-  "success": true,
-  "previousMode": "lite",
-  "currentMode": "advanced",
-  "mode": "advanced",
-  "label": "Advanced Mode (3B)",
-  "model": "qwen2.5:3b",
-  "estimatedRamMB": 2350
-}
-```
-Frontend จะอัปเดตปุ่มที่ Active, เปลี่ยนป้ายบอกสถานะเป็น `Adv Ready`, แสดงข้อความยืนยันในแชต, และอัปเดตชื่อโมเดลในแผงสถิติ Token
-
----
-
-### 4.3 การล้างเซสชันเมื่อเริ่มแชตใหม่ (`DELETE /api/chat/session/:sessionId`)
-
-เมื่อผู้ใช้กดปุ่ม `แชตใหม่`:
-1. Frontend จะยิงคำขอ `DELETE /api/chat/session/:sessionId` ไปยังเซิร์ฟเวอร์เพื่อคืน RAM และลบประวัติการสนทนาเดิม
-2. สร้าง `sessionId` ใหม่ และบันทึกลงใน `localStorage`
-3. ล้างหน้าต่างแชต
-4. เรียกฟังก์ชัน `resetTelemetryUI()` เพื่อปรับมาตรวัด Token, รอบการสนทนา, และยอดสะสมทั้งหมดกลับเป็น 0
+   - ขณะ Tool เสร็จสิ้น: `{ "status": "tool_done", "tool": "get_weather", "durationMs": 450 }`
+   - ขณะเริ่มสังเคราะห์: `{ "status": "synthesizing", "estimatedPromptTokens": 280, "maxContextTokens": 4096 }`
+   - ข้อมูลโมเดล: `{ "status": "model_state", "warm": true, "loadMs": 0 }`
+   - โทเค็นแรก: `{ "status": "first_token", "ttftMs": 420 }`
+3. `event: token`: ชิ้นส่วนคำตอบที่ทยอยส่งออกมา `{ "token": "ขณะนี้" }`
+4. `event: done`: ผลลัพธ์สุดท้ายฉบับสมบูรณ์พร้อมข้อมูล `usage` และ `toolsUsed`
+5. `event: error`: ส่งข้อความข้อผิดพลาดเมื่อเกิดปัญหาในระบบ
 
 ---
 
@@ -138,5 +109,6 @@ Frontend บันทึกการตั้งค่าของผู้ใ�
 | Key | ค่าที่เป็นไปได้ | หน้าที่ |
 | :--- | :--- | :--- |
 | `ai_agent_session_id` | `sess_<timestamp>_<random>` | รหัสประจำตัวของเซสชันการสนทนาปัจจุบัน |
-| `ai_agent_tool_mode` | `"auto"` \| `"chat"` \| `"search"` | โหมดการทำงานของเครื่องมือที่เลือกไว้ล่าสุด |
+| `ai_agent_tool_mode` | `"auto"` \| `"chat"` \| `"search"` \| `"linux"` | โหมดการทำงานของเครื่องมือที่เลือกไว้ล่าสุด |
 | `ai_agent_telemetry_open`| `"1"` \| `"0"` | สถานะเปิดหรือปิดแผงสถิติ Token & บริบท |
+| `ai_agent_model_mode` | `"lite"` \| `"advanced"` | โหมดโมเดล AI ที่เลือกไว้ล่าสุด |

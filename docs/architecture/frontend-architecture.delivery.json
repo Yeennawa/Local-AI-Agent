@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "b198b92f-424e-491f-966f-13e1ad46b92f",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Projects\\Local-AI-Agent\\.archify\\frontend-architecture\\candidate.json",
+  "output": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\frontend-architecture.html",
+  "specification": {
+    "sha256": "7c6b07efd806fe833582d16a70629c5fdba58dfe3eddd6650262ba4bf13453c7",
+    "bytes": 4732
+  },
+  "artifact": {
+    "sha256": "f098037d34ea538759e922abcd2fcf582b671e89e8b952269f6c35e545bd0785",
+    "bytes": 856712
+  }
+}

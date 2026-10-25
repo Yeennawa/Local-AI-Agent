@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Projects\\Local-AI-Agent\\.archify\\architecture-local-ai-agent\\candidate.json",
+    "sha256": "1f6da248d127d3f6cb8e364a33c7e9513bb7432bca1991d6b4ca069baa6eb941",
+    "bytes": 5457
+  },
+  "artifact": {
+    "path": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\system-architecture.html",
+    "sha256": "6bf5e18309d8f8ade4eecdc2d7cd02d878de21ad6489924ae06a4c3a7b6b19a4",
+    "bytes": 861237
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\system-architecture.finalize.json",
+    "summaryReceipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\system-architecture.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Projects\\Local-AI-Agent\\docs\\architecture\\system-architecture.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-25T15:58:07.631Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 5369,
+  "browserCheck": {
+    "requested": true,
+    "ran": true
+  },
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 6
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "c-http-sse",
+            "from": "browser_client",
+            "to": "express_server",
+            "label": "POST /api/chat/stream",
+            "collectionIndex": 2,
+            "artifactIndex": 3
+          },
+          "bends": 3,
+          "stretch": 1.259
+        },
+        {
+          "relationship": {
+            "id": "c-queue-agent",
+            "from": "fifo_queue",
+            "to": "agent_pipeline",
+            "label": "Dispatches Job",
+            "collectionIndex": 4,
+            "artifactIndex": 5
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "c-agent-tools",
+            "from": "agent_pipeline",
+            "to": "tools_suite",
+            "label": "Executes Tool",
+            "collectionIndex": 7,
+            "artifactIndex": 8
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "c-agent-search",
+            "from": "agent_pipeline",
+            "to": "dual_search",
+            "label": "Grounded Retrieval",
+            "collectionIndex": 9,
+            "artifactIndex": 10
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "c-agent-ollama",
+            "from": "agent_pipeline",
+            "to": "ollama_runtime",
+            "label": "Synthesize Stream",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "bends": 4,
+          "stretch": 1.278,
+          "directCorridorBlockers": [
+            {
+              "id": "linux_guard",
+              "label": "Linux Command Guard",
+              "box": [
+                730,
+                240,
+                170,
+                70
+              ]
+            }
+          ]
+        },
+        {
+          "relationship": {
+            "id": "c-os-telemetry",
+            "from": "os_monitor",
+            "to": "express_server",
+            "label": "Kernel Metrics",
+            "collectionIndex": 11,
+            "artifactIndex": 12
+          },
+          "bends": 3,
+          "stretch": 1.101
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "agent_pipeline has 4 relationships facing its right side, which fits 3 ports: make that side at least 74px, or move some of those neighbours so they face another side of agent_pipeline.",
+      "browser_client → express_server needs 3 bends: move node browser_client or express_server so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "fifo_queue → agent_pipeline needs 3 bends: move node fifo_queue or agent_pipeline so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "agent_pipeline → tools_suite needs 3 bends: move node agent_pipeline or tools_suite so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "agent_pipeline → dual_search needs 3 bends: move node agent_pipeline or dual_search so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "os_monitor → express_server needs 3 bends: move node os_monitor or express_server so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}
