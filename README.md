@@ -3,6 +3,7 @@
 ระบบผู้ช่วย AI อัจฉริยะประมวลผลบนอุปกรณ์เอดจ์ (Edge AI Assistant) แบบกระจายศูนย์ ออกแบบเฉพาะสำหรับบอร์ด **Raspberry Pi 5 (RAM 4GB)** และคอมพิวเตอร์ทั่วไป ขับเคลื่อนด้วย Ollama ในเครื่อง ทำงานอิสระ 100% ภายในเครือข่าย ปลอดภัย ไม่เสียค่าบริการ Cloud API และถนอม Flash Memory ด้วยการไม่เขียนไฟล์ชั่วคราวลง MicroSD Card (Zero Disk Writes)
 
 ![Local AI Agent Web UI](docs/assets/web-ui-overview.png)
+> คลิกเปิดดูภาพหน้าจอขนาดเต็มพร้อมระบบส่งออกภาพคมชัดสูงสำหรับทำสไลด์: **[เปิดดูออนไลน์ (Interactive Web Preview)](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/web-ui-preview.html)** | **[เปิดบน Localhost](http://localhost:3000/architecture/web-ui-preview.html)**
 
 ---
 
@@ -112,10 +113,11 @@ Local-AI-Agent/
 ├── docs/                               # เอกสารสถาปัตยกรรมและคู่มือการติดตั้ง
 │   ├── assets/
 │   │   └── web-ui-overview.png         # ภาพหน้าจอจริงของ Web Chat UI และ Telemetry Drawer
-│   ├── architecture/                   # แผนผังสถาปัตยกรรม Interactive HTML (สร้างด้วย Archify)
+│   ├── architecture/                   # แผนผังสถาปัตยกรรมและพรีวิว Interactive HTML
 │   │   ├── system-architecture.html    # แผนผังสถาปัตยกรรมภาพรวมทั้งระบบ (พร้อมปุ่ม Export SVG/PNG)
 │   │   ├── ai-agent-pipeline.html      # แผนผังการทำงานภายในโมดูล AI-Agent
-│   │   └── frontend-architecture.html  # แผนผังการทำงานและการไหลของ Event ฝั่ง Frontend
+│   │   ├── frontend-architecture.html  # แผนผังการทำงานและการไหลของ Event ฝั่ง Frontend
+│   │   └── web-ui-preview.html         # พรีวิวหน้าจอ Web UI แบบเต็ม (พร้อมปุ่ม Export HD PNG 2x)
 │   ├── PROJECT_CONTEXT.md              # พิมพ์เขียวสถาปัตยกรรมระบบฉบับสมบูรณ์
 │   ├── AGENT_API_CONTRACT.md           # สัญญาข้อกำหนด API (Version 2.0.0)
 │   ├── PI_RUNBOOK.md                   # คู่มือการติดตั้ง ZRAM และ Systemd บน Raspberry Pi 5
