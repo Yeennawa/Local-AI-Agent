@@ -83,7 +83,7 @@ Local-AI-Agent/
 │   │   ├── system-architecture.html    # แผนผังภาพรวมระบบทั้ง 3 ระดับ
 │   │   ├── ai-agent-pipeline.html      # แผนผังการทำงานภายใน AI-Agent
 │   │   ├── frontend-architecture.html  # แผนผังการทำงานภายใน Frontend
-│   │   └── web-ui-preview.html         # พรีวิวหน้าจอ Web UI แบบเต็ม (พร้อมปุ่ม Export HD PNG 2x)
+│   │   └── web-ui-preview.html         # พรีวิวหน้าจอ Web UI แบบเต็ม (พร้อมปุ่ม Download PNG)
 │   ├── PROJECT_CONTEXT.md              # [เอกสารนี้] พิมพ์เขียวสถาปัตยกรรมระบบฉบับหลัก
 │   ├── AGENT_API_CONTRACT.md           # สัญญาข้อต่อข้อมูลระหว่าง Agent, Backend และ Frontend
 │   ├── PI_RUNBOOK.md                   # คู่มือการตั้งค่า ZRAM และ Systemd สำหรับ Raspberry Pi 5

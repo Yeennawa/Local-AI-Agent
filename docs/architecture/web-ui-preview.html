@@ -207,7 +207,7 @@
   <header>
     <div class="brand">
       <div class="title">Local AI Agent - Web UI Overview</div>
-      <div class="subtitle">ภาพหน้าจอส่วนติดต่อผู้ใช้พร้อมระบบส่งออกความละเอียดสูงสำหรับทำสไลด์</div>
+      <div class="subtitle">ภาพหน้าจอส่วนติดต่อผู้ใช้ขนาดเต็มต้นฉบับสำหรับนำไปใช้ทำสไลด์หรือรายงาน</div>
     </div>
     <div class="toolbar">
       <div class="btn-group">
@@ -219,11 +219,8 @@
       <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="btn" title="เปิดหน้าเว็บของจริงที่กำลังรันบน Localhost">
         เปิด Web UI สด (Localhost)
       </a>
-      <button id="btn-download-orig" class="btn" title="ดาวน์โหลดไฟล์รูปภาพต้นฉบับ">
-        Download Original PNG
-      </button>
-      <button id="btn-export-hd" class="primary" title="ส่งออกภาพแบบความหนาแน่นสูง 2x สำหรับนำไปวางในสไลด์">
-        Export HD PNG (2x For Slides)
+      <button id="btn-download-orig" class="primary" title="ดาวน์โหลดไฟล์รูปภาพต้นฉบับคมชัด">
+        Download Image (PNG)
       </button>
     </div>
   </header>
@@ -240,7 +237,7 @@
       <span style="margin-left: 8px;">คลิกและลากเมาส์เพื่อเลื่อนมุมมอง | หมุนลูกกลิ้งเมาส์เพื่อซูมเข้า-ออก</span>
     </div>
     <div>
-      <span>ระบบขยายภาพความละเอียดสูง: <strong>2048 x 924 px</strong> ผ่าน Canvas Render</span>
+      <span>ภาพความคมชัดต้นฉบับ 100% สำหรับนำไปใส่สไลด์หรือรายงาน</span>
     </div>
   </footer>
 
@@ -253,7 +250,6 @@
       const zoomInBtn = document.getElementById('btn-zoom-in');
       const zoomOutBtn = document.getElementById('btn-zoom-out');
       const themeBtn = document.getElementById('btn-theme');
-      const exportHdBtn = document.getElementById('btn-export-hd');
       const downloadOrigBtn = document.getElementById('btn-download-orig');
 
       let scale = 1;
@@ -321,38 +317,6 @@
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-      });
-
-      // Export HD (2x Canvas Supersampling)
-      exportHdBtn.addEventListener('click', () => {
-        exportHdBtn.disabled = true;
-        exportHdBtn.textContent = 'กำลังประมวลผล...';
-
-        setTimeout(() => {
-          try {
-            const canvas = document.createElement('canvas');
-            const targetScale = 2;
-            canvas.width = (img.naturalWidth || 1024) * targetScale;
-            canvas.height = (img.naturalHeight || 462) * targetScale;
-            const ctx = canvas.getContext('2d');
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-            const dataUrl = canvas.toDataURL('image/png');
-            const a = document.createElement('a');
-            a.href = dataUrl;
-            a.download = 'local-ai-agent-web-ui-hd-2048x924.png';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-          } catch (err) {
-            alert('ไม่สามารถส่งออกภาพได้: ' + err.message);
-          } finally {
-            exportHdBtn.disabled = false;
-            exportHdBtn.textContent = 'Export HD PNG (2x For Slides)';
-          }
-        }, 50);
       });
     })();
   </script>
