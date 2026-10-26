@@ -1655,11 +1655,12 @@ function attachLinuxCommandControls(bubble, reply) {
     canExecute = Boolean(res.canExecute);
 
     const riskLabels = {
+      "read": "อ่านข้อมูลปลอดภัย (Read-Only)",
       "read-only": "อ่านข้อมูลปลอดภัย (Read-Only)",
       "modify": "แก้ไขระบบ (แนะนำให้คัดลอกรันเอง)",
       "destructive": "มีความเสี่ยงสูง (ไม่อนุญาตให้รัน)"
     };
-    const riskKey = res.risk || "read-only";
+    const riskKey = res.risk || "read";
     const flagsHtml = Array.isArray(res.flags) && res.flags.length > 0
       ? `<div class="linux-flags-table">${res.flags.map(function (f) {
           return `<div class="linux-flag-item"><code>${escapeHtml(f.flag)}</code><span>${escapeHtml(f.meaningThai)}</span></div>`;
@@ -1671,7 +1672,7 @@ function attachLinuxCommandControls(bubble, reply) {
         <span class="linux-card-title">${escapeHtml(res.titleThai || "คำสั่ง Linux สำหรับ Raspberry Pi")}</span>
         <span class="linux-risk-badge risk-${escapeHtml(riskKey)}">${escapeHtml(riskLabels[riskKey] || riskKey)}</span>
       </div>
-      ${res.explainThai ? `<div style="font-size:12.5px;color:#cbd5e1;line-height:1.5;">${escapeHtml(res.explainThai)}</div>` : ""}
+      ${res.explainThai ? `<div class="linux-card-explain">${escapeHtml(res.explainThai)}</div>` : ""}
       <pre class="linux-code-block">${escapeHtml(command)}</pre>
       ${flagsHtml}
     </div>`;

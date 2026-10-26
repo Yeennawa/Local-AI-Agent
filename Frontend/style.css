@@ -610,7 +610,8 @@ body {
   border-radius: 8px;
 }
 
-.linux-risk-badge.risk-read {
+.linux-risk-badge.risk-read,
+.linux-risk-badge.risk-read-only {
   background-color: #e6f4ea;
   color: #137333;
 }
@@ -645,6 +646,40 @@ body {
 }
 
 .linux-flags-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.linux-flag-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background-color: var(--surface-color, #ffffff);
+  border: 1px solid var(--border-color, #decbd0);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-color);
+}
+
+.linux-flag-item code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: var(--primary-dark);
+  background-color: var(--soft-pink, #f3e4e8);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.linux-flag-item span {
+  flex: 1;
+}
+
+.linux-flags-table-raw {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
