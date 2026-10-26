@@ -5,7 +5,7 @@
 ![Frontend Web UI](../docs/assets/web-ui-overview.png)
 
 > **แผนผังสถาปัตยกรรมและการไหลของ Event ฝั่ง Frontend (Interactive HTML พร้อมส่งออกรูปทำสไลด์):**  
-> คลิกเปิดไฟล์ **[frontend-architecture.html](../docs/architecture/frontend-architecture.html)** บนเว็บเบราว์เซอร์เพื่อสำรวจการทำงานของ SSE Stream, แอนิเมชันอวตาร 0-CPU, และแผงวัดสถิติ Real-time พร้อมกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อนำภาพไปใส่สไลด์ได้ทันที
+> คลิกเปิดไฟล์ **[เปิดดูออนไลน์ (Interactive Web)](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/frontend-architecture.html) หรือ [เปิดบน Localhost](http://localhost:3000/architecture/frontend-architecture.html)** บนเว็บเบราว์เซอร์เพื่อสำรวจการทำงานของ SSE Stream, แอนิเมชันอวตาร 0-CPU, และแผงวัดสถิติ Real-time พร้อมกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อนำภาพไปใส่สไลด์ได้ทันที
 
 ---
 

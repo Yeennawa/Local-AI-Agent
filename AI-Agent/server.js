@@ -24,6 +24,7 @@ export function createApp(agentOptions = {}, queue = requestQueue, manager = mod
 
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(express.static(path.join(__dirname, '../Frontend')));
+  app.use('/architecture', express.static(path.join(__dirname, '../docs/architecture')));
 
   // Health check endpoint for hardware telemetry on Raspberry Pi 5
   app.get('/api/health', (_req, res) => {

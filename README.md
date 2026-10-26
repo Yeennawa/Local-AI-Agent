@@ -65,13 +65,13 @@ npm start
 
 ## 3. แผนผังสถาปัตยกรรมระบบแบบ Interactive (Archify Diagrams & Slide Export)
 
-เพื่อความคมชัดสูงสุดในการนำไปใช้ทำสไลด์นำเสนอหรือรายงาน สามารถเปิดไฟล์ Interactive HTML ด้านล่างบนเว็บเบราว์เซอร์เพื่อซูมดูรายละเอียด สลับธีมมืด/สว่าง และกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อบันทึกเป็นรูปภาพความละเอียดสูงได้ทันที:
+เพื่อความคมชัดสูงสุดในการนำไปใช้ทำสไลด์นำเสนอหรือรายงาน สามารถคลิกเปิดดูแผนผังแบบ Interactive ได้ทั้งผ่านลิงก์ออนไลน์ หรือผ่าน Localhost เมื่อรันเซิร์ฟเวอร์ โดยในหน้าเว็บสามารถซูมดูรายละเอียด สลับธีมมืด/สว่าง และกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อบันทึกเป็นรูปภาพความละเอียดสูงไปใส่สไลด์ได้ทันที:
 
-| แผนผังสถาปัตยกรรม | ลิงก์เปิดหน้า Interactive HTML (รองรับ Export รูปภาพ) | ขอบเขตเนื้อหาในแผนผัง |
-| :--- | :--- | :--- |
-| **1. ภาพรวมทั้งระบบ (System Architecture)** | **[เปิดแผนผัง System Architecture (HTML)](docs/architecture/system-architecture.html)** | แสดงการทำงานร่วมกันทั้ง 3 ระดับ: Client Browser, Express & Linux Runqueue v2, AI Agent Core และ Ollama บน Raspberry Pi 5 |
-| **2. แกนประมวลผล AI (AI-Agent Pipeline)** | **[เปิดแผนผัง AI-Agent Pipeline (HTML)](docs/architecture/ai-agent-pipeline.html)** | แสดงขั้นตอนภายใน [`AI-Agent/`](AI-Agent/README.md): Fast Recall, Thai Normalizer, Router & 4 Tool Modes, 10 Tools, Linux Command Guard และ 2-Pass Reflection |
-| **3. ส่วนติดต่อผู้ใช้ (Frontend Architecture)** | **[เปิดแผนผัง Frontend Architecture (HTML)](docs/architecture/frontend-architecture.html)** | แสดงสถาปัตยกรรมภายใน [`Frontend/`](Frontend/ReadMe.md): การรับส่ง SSE Events, Queue Modal, Thinking Trail, Linux Card, Zero-CPU Avatar และ Telemetry Drawer |
+| แผนผังสถาปัตยกรรม | เปิดดูสดบนเบราว์เซอร์ (กด Export SVG/PNG ทำสไลด์ได้ทันที) | เปิดบนเครื่อง Localhost (เมื่อรันเซิร์ฟเวอร์) | ขอบเขตเนื้อหาในแผนผัง |
+| :--- | :--- | :--- | :--- |
+| **1. ภาพรวมทั้งระบบ (System Architecture)** | **[เปิดดูออนไลน์ (Interactive Web)](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/system-architecture.html)** | [เปิดดูบน Localhost](http://localhost:3000/architecture/system-architecture.html) | แสดงการทำงานร่วมกันทั้ง 3 ระดับ: Client Browser, Express & Linux Runqueue v2, AI Agent Core และ Ollama บน Raspberry Pi 5 |
+| **2. แกนประมวลผล AI (AI-Agent Pipeline)** | **[เปิดดูออนไลน์ (Interactive Web)](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/ai-agent-pipeline.html)** | [เปิดดูบน Localhost](http://localhost:3000/architecture/ai-agent-pipeline.html) | แสดงขั้นตอนภายใน [`AI-Agent/`](AI-Agent/README.md): Fast Recall, Thai Normalizer, Router & 4 Tool Modes, 10 Tools, Linux Command Guard และ 2-Pass Reflection |
+| **3. ส่วนติดต่อผู้ใช้ (Frontend Architecture)** | **[เปิดดูออนไลน์ (Interactive Web)](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/frontend-architecture.html)** | [เปิดดูบน Localhost](http://localhost:3000/architecture/frontend-architecture.html) | แสดงสถาปัตยกรรมภายใน [`Frontend/`](Frontend/ReadMe.md): การรับส่ง SSE Events, Queue Modal, Thinking Trail, Linux Card, Zero-CPU Avatar และ Telemetry Drawer |
 
 ---
 

@@ -7,3 +7,4 @@ Thumbs.db
 
 # Ignored from Git for group repository
 tests/
+.archify/

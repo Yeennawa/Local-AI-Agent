@@ -25,9 +25,9 @@
 
 ### แผนผังสถาปัตยกรรมแบบ Interactive (เปิดแล้วกด Export รูป SVG/PNG ไปทำสไลด์ได้ทันที):
 
-- **[1. เปิดแผนผังภาพรวมระบบ (System Architecture HTML)](../architecture/system-architecture.html)** — แสดงการทำงานร่วมกันของ Client Tier, Express & Linux Runqueue v2, และ AI Agent Core บน Raspberry Pi 5
-- **[2. เปิดแผนผังแกนประมวลผล AI (AI-Agent Pipeline HTML)](../architecture/ai-agent-pipeline.html)** — แสดงลำดับการทำงานภายในโมดูล `AI-Agent/` ตั้งแต่รับข้อความจนถึงการตรวจสอบคุณภาพคำตอบ
-- **[3. เปิดแผนผังส่วนติดต่อผู้ใช้ (Frontend Architecture HTML)](../architecture/frontend-architecture.html)** — แสดงการรับส่ง SSE Events, แอนิเมชันอวตาร 0-CPU, และแผงวัดสถิติ Real-time
+- **[1. แผนผังภาพรวมระบบ: เปิดดูออนไลน์](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/system-architecture.html) | [เปิดบน Localhost](http://localhost:3000/architecture/system-architecture.html)** — แสดงการทำงานร่วมกันของ Client Tier, Express & Linux Runqueue v2, และ AI Agent Core บน Raspberry Pi 5
+- **[2. แผนผังแกนประมวลผล AI: เปิดดูออนไลน์](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/ai-agent-pipeline.html) | [เปิดบน Localhost](http://localhost:3000/architecture/ai-agent-pipeline.html)** — แสดงลำดับการทำงานภายในโมดูล `AI-Agent/` ตั้งแต่รับข้อความจนถึงการตรวจสอบคุณภาพคำตอบ
+- **[3. แผนผังส่วนติดต่อผู้ใช้: เปิดดูออนไลน์](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/frontend-architecture.html) | [เปิดบน Localhost](http://localhost:3000/architecture/frontend-architecture.html)** — แสดงการรับส่ง SSE Events, แอนิเมชันอวตาร 0-CPU, และแผงวัดสถิติ Real-time
 
 ---
 

@@ -5,7 +5,7 @@
 โมดูลนี้ออกแบบให้ทำงานเป็นอิสระ (Deep Module) โดยเชื่อมต่อกับ Ollama ในเครื่อง และควบคุมปริมาณ Token กับการใช้หน่วยความจำเพื่อให้ทำงานบน Raspberry Pi 5 (RAM 4GB) ได้อย่างเสถียร 100% ปราศจากอาการหน่วยความจำล้น (OOM) และปกป้อง MicroSD Card จากการสึกหรอ (Zero Disk Writes)
 
 > **แผนผังการทำงานภายในโมดูล AI-Agent (Interactive HTML พร้อมส่งออกรูปทำสไลด์):**  
-> คลิกเปิดไฟล์ **[ai-agent-pipeline.html](../docs/architecture/ai-agent-pipeline.html)** บนเว็บเบราว์เซอร์เพื่อสำรวจลำดับการทำงานทั้ง 3 เฟสและกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อนำภาพไปใช้งานได้ทันที
+> คลิกเปิดไฟล์ **[เปิดดูออนไลน์ (Interactive Web)](https://htmlpreview.github.io/?https://github.com/Yeennawa/Local-AI-Agent/blob/main/docs/architecture/ai-agent-pipeline.html) หรือ [เปิดบน Localhost](http://localhost:3000/architecture/ai-agent-pipeline.html)** บนเว็บเบราว์เซอร์เพื่อสำรวจลำดับการทำงานทั้ง 3 เฟสและกดปุ่ม **Export SVG / Export PNG** มุมขวาบนเพื่อนำภาพไปใช้งานได้ทันที
 
 ---
 
