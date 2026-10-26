@@ -72,10 +72,11 @@ export function composeStructuredAnswer(toolName, result) {
     }
 
     case 'get_current_time': {
-      if (result.time || result.formatted || result.iso) {
-        const timeStr = result.time || result.formatted || result.iso;
+      const timeStr = result.formattedTime || result.time || result.formatted || result.iso;
+      if (timeStr) {
+        const dateStr = result.formattedDate ? ` ${result.formattedDate}` : '';
         const tzStr = result.timezone ? ` (เขตเวลา ${result.timezone})` : '';
-        return `เวลาปัจจุบันคือ ${timeStr}${tzStr} ครับ`;
+        return `เวลาปัจจุบันคือ ${timeStr}${dateStr}${tzStr} ครับ`;
       }
       return null;
     }
@@ -110,10 +111,13 @@ export function composeStructuredAnswer(toolName, result) {
     }
 
     case 'search_github': {
-      if (Array.isArray(result.repos) && result.repos.length > 0) {
-        const top = result.repos.slice(0, 3).map((r) => {
+      const repos = Array.isArray(result.repositories) ? result.repositories : result.repos;
+      if (Array.isArray(repos) && repos.length > 0) {
+        const top = repos.slice(0, 3).map((r) => {
+          const stars = typeof r.stars === 'number' ? ` (${r.stars.toLocaleString()} stars)` : '';
           const desc = r.description ? ` - ${r.description}` : '';
-          return `- ${r.name || r.full_name}${desc}`;
+          const url = r.url ? ` [${r.url}]` : '';
+          return `- ${r.name || r.full_name}${stars}${desc}${url}`;
         }).join('\n');
         return `พบคลังข้อมูลบน GitHub ดังนี้ครับ:\n${top}`;
       }

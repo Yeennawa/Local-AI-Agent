@@ -42,7 +42,7 @@ const QUESTION_MARKER_REGEX = /(?:ไหม|มั้ย|หรือ|อะไ�
  *
  * @param {Object} route - The route result produced by routeIntent()
  * @param {Object} options
- * @param {string} [options.toolMode='auto'] - 'auto' | 'chat' | 'search'
+ * @param {string} [options.toolMode='auto'] - 'auto' | 'chat' | 'search' | 'linux'
  * @param {string} [options.message=''] - Original user message
  * @returns {Object} Adjusted route object
  */
@@ -65,12 +65,26 @@ export function applyToolModePolicy(route, { toolMode = 'auto', message = '' } =
     return route;
   }
 
-  // 3. In-device local tools & structured data are preserved across all modes
+  // 3. Linux Mode: route directly to linux_assistant tool before local device interceptors
+  if (mode === 'linux') {
+    const queryStr = (typeof message === 'string') ? message.trim() : '';
+    return {
+      intent: 'tool',
+      toolCall: {
+        name: 'linux_assistant',
+        params: { query: queryStr }
+      },
+      confidence: 'high',
+      reason: 'tool_mode_linux'
+    };
+  }
+
+  // 4. In-device local tools & structured data are preserved across chat and search modes
   if (route.intent === 'tool' && LOCAL_AND_STRUCTURED_TOOLS.has(route.toolCall?.name)) {
     return route;
   }
 
-  // 4. Chat Mode: suppress external search and knowledge tools
+  // 5. Chat Mode: suppress external search and knowledge tools
   if (mode === 'chat') {
     if (route.intent === 'tool') {
       return {
@@ -83,7 +97,7 @@ export function applyToolModePolicy(route, { toolMode = 'auto', message = '' } =
     return route;
   }
 
-  // 5. Search Mode: boost knowledge & substantive queries to live web search
+  // 6. Search Mode: boost knowledge & substantive queries to live web search
   if (mode === 'search') {
     // If router picked Wikipedia or News, redirect to deep live web search (Tavily AI Primary)
     if (route.intent === 'tool' && (route.toolCall?.name === 'search_wikipedia' || route.toolCall?.name === 'get_news')) {
@@ -118,20 +132,6 @@ export function applyToolModePolicy(route, { toolMode = 'auto', message = '' } =
     }
 
     return route;
-  }
-
-  // 6. Linux Mode: route directly to linux_assistant tool
-  if (mode === 'linux') {
-    const queryStr = (typeof message === 'string') ? message.trim() : '';
-    return {
-      intent: 'tool',
-      toolCall: {
-        name: 'linux_assistant',
-        params: { query: queryStr }
-      },
-      confidence: 'high',
-      reason: 'tool_mode_linux'
-    };
   }
 
   return route;
